@@ -20,7 +20,13 @@ If an agent breaks the system, reboot and pick yesterday's version from the boot
 ## Install
 
 1. Make sure your GitHub account has an SSH key on it, because that's how you'll log in.
-2. Download the ISO from the latest run under **Actions → Build installer ISO** and flash it to a USB stick. In Rufus, pick DD mode.
+2. Write the installer to a USB stick. On a Mac or Linux, plug the stick in and run:
+
+   ```sh
+   curl -fsSL https://agency.makors.xyz/flash | sh
+   ```
+
+   On Windows, download the ISO from [agency.makors.xyz](https://agency.makors.xyz) and write it with balenaEtcher, or Rufus in DD mode.
 3. In the BIOS, turn Secure Boot off and TPM on.
 4. Boot the stick. A setup screen walks you through the network, a name for the machine, your GitHub username, which disk to erase, Tailscale, and which apps you want. Tailscale sign-in is a QR code you scan with your phone.
 

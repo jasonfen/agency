@@ -7,7 +7,9 @@
 - Internet during the install. A cable is easiest; the wizard can also join Wi-Fi.
 - A GitHub account with an SSH key on it. Password login is disabled, and the machine accepts the keys from `github.com/<you>.keys`.
 
-Flash the ISO with balenaEtcher or `dd`. In Rufus, choose **DD Image mode** when it asks; its ISO mode produces a stick that fails to boot.
+On a Mac or Linux, `curl -fsSL https://agency.makors.xyz/flash | sh` downloads the newest ISO and writes it with [Caligula](https://github.com/ifd3f/caligula), which checks the ISO's SHA-256, lets you pick the stick, and verifies it afterwards. The ISO stays in `~/Downloads` for the next stick.
+
+Otherwise download the ISO from [agency.makors.xyz](https://agency.makors.xyz) (newest build: `https://iso.makors.xyz/latest/agency-installer.iso`, details in `latest.json` next to it) and flash it with balenaEtcher or `dd`. In Rufus, choose **DD Image mode** when it asks; its ISO mode produces a stick that fails to boot.
 
 ## The setup screen
 
