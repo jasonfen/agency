@@ -9,8 +9,6 @@
   Turns a spare laptop into a computer for your agents.
 </p>
 
-Your agents get root and a desktop of their own, and your computer stays yours.
-
 <p align="center">
   <img src="docs/setup-welcome.png" alt="The first screen of the agency installer" width="720">
 </p>
