@@ -1,31 +1,18 @@
 ---
 name: agency-secrets
-description: Read or store API keys, tokens and passwords on the agency machine. Read this when a task needs a credential, or when you are about to write one to a file.
+description: Where API keys and tokens live on the agency machine, and how to store new ones. Use when a task needs a credential.
 ---
 
 # Secrets
 
-Secrets are stored encrypted in `/etc/nixos/secrets/agency.sops.json`. At boot
-each one is decrypted to `/run/secrets/NAME`, and new shells have it as `$NAME`.
+Secrets are stored encrypted in the repo (`/etc/nixos/secrets/`) with
+sops-nix. Each one is available as `/run/secrets/NAME` and as `$NAME` in new
+shells. `agency secret` lists them; `agency secret set NAME` stores one,
+reading the value from stdin, and rebuilds.
 
-```sh
-agency secret                         # list names
-echo "$OPENAI_API_KEY"                # use one (new shells only)
-cat /run/secrets/OPENAI_API_KEY       # or read the file
-agency secret set OPENAI_API_KEY      # store one: asks for the value, or reads stdin
-agency secret remove OPENAI_API_KEY
-```
+Keep secret values out of plain files, commits, command arguments and your
+replies. If a person has a key for you, they can run `agency secret set`
+themselves over SSH.
 
-`set` and `remove` commit the encrypted file and rebuild. Add `--no-rebuild`
-to store several, then run `agency rebuild` once.
-
-Rules:
-
-- Never put a secret in a plain file in a repo, in a commit message, in a
-  command line argument, or in your reply. Pipe it: `printf %s "$VALUE" | agency secret set NAME`.
-- If the person gives you a key in chat, store it with `agency secret set` and
-  then refer to it by name only.
-- A secret you need but do not have: ask the person to run
-  `agency secret set NAME` over SSH. Do not ask them to paste it to you.
-- The disk recovery key is not a secret for agents. Do not read
-  `/root/luks-recovery-key.txt`; a person runs `agency recovery-key`.
+The disk recovery key is not for agents. A person reads it with
+`agency recovery-key`.
