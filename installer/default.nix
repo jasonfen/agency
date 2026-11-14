@@ -180,6 +180,12 @@ in
         };
       };
 
+      # The browser draws no text at all unless the system has a font
+      # configuration and at least one font, even though the page brings
+      # its own fonts. The minimal installer switches both off.
+      fonts.fontconfig.enable = lib.mkForce true;
+      fonts.packages = [ pkgs.dejavu_fonts ];
+
       # cage shows one program fullscreen. "-s" keeps Ctrl+Alt+F2 working,
       # and the pixman renderer needs no graphics driver beyond a screen.
       services.cage = {

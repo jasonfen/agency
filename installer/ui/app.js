@@ -16,8 +16,9 @@ const STEPS = [
 const state = {
   info: null,
   screen: "welcome",
-  online: null,
+  net: null,
   wifi: null,
+  ssid: "",
   wifiError: "",
   name: "",
   user: "",
@@ -77,59 +78,97 @@ const screens = {
   },
 
   network() {
-    let body;
-    if (state.online === null) {
-      body = `<p class="muted">Checking the connection.</p>`;
-    } else if (state.online) {
-      body = `<div class="notice notice--good"><strong>Connected to the internet.</strong></div>`;
+    const net = state.net;
+    let status;
+    if (!net) {
+      status = `<p class="muted">Checking the connection.</p>`;
+    } else if (net.online) {
+      const how = net.wired ? " by cable" : net.ssid ? ` over Wi-Fi` : "";
+      status = `<div class="notice notice--good"><strong>Connected to the internet${how}.</strong></div>`;
     } else {
+      status = `<div class="notice">Not connected yet. Plug in a network cable, or join Wi-Fi below.</div>`;
+    }
+
+    let wifi = "";
+    if (net && net.wifi) {
+      const hint = net.ssid
+        ? `Joined <strong>${esc(net.ssid)}</strong>. The computer will keep using it after setup.`
+        : net.online
+          ? "Optional. Join a network now if this computer will run without the cable."
+          : "";
+      const picked = state.ssid || net.ssid || state.wifi?.[0]?.ssid || "";
       const list = state.wifi === null
         ? `<p class="muted">Looking for Wi-Fi networks.</p>`
         : state.wifi.length === 0
-          ? `<p class="muted">No Wi-Fi networks found. Plug in a network cable.</p>`
-          : `<div class="choices" role="radiogroup" aria-label="Wi-Fi networks">${state.wifi.map((n, i) => `
+          ? `<p class="muted">No Wi-Fi networks found.</p>`
+          : `<div class="choices" role="radiogroup" aria-label="Wi-Fi networks">${state.wifi.map((n) => `
               <label class="choice">
-                <input type="radio" name="ssid" value="${esc(n.ssid)}" ${i === 0 ? "checked" : ""}>
+                <input type="radio" name="ssid" value="${esc(n.ssid)}" ${n.ssid === picked ? "checked" : ""}>
                 ${icon("pointer", "mark")}
                 <span class="name">${esc(n.ssid)}</span>
-                <span class="aside">${n.secure ? "password" : "open"}</span>
+                <span class="aside">${n.ssid === net.ssid ? "joined" : n.secure ? "password" : "open"}</span>
               </label>`).join("")}</div>
             <div class="field">
               <label for="wifi-pass">Wi-Fi password</label>
               <input class="input" id="wifi-pass" type="password" autocomplete="off">
-            </div>
-            <p style="margin-top: var(--s2)"><button class="button" id="wifi-join">Join network</button></p>`;
-      body = `<p>No connection yet. Plug in a network cable, or join Wi-Fi.</p>
+            </div>`;
+      wifi = `<h2>Wi-Fi</h2>
+        ${hint ? `<p class="muted">${hint}</p>` : ""}
         ${state.wifiError ? `<div class="notice notice--bad">${esc(state.wifiError)}</div>` : ""}
-        <h2>Wi-Fi</h2>${list}`;
+        ${list}
+        <p style="margin-top: var(--s2); display: flex; gap: var(--s2)">
+          ${state.wifi?.length ? `<button class="button" id="wifi-join">${state.busy ? "Joining" : "Join network"}</button>` : ""}
+          ${state.wifi !== null ? `<button class="button button--quiet" id="wifi-scan">Look again</button>` : ""}
+        </p>`;
+    } else if (net && !net.online) {
+      wifi = `<p class="muted" style="margin-top: var(--s2)">This computer has no Wi-Fi adapter that setup can use, so it needs a cable.</p>`;
     }
+
     return {
       html: `<h1>Network</h1>
-        <p class="lede">The installer needs the internet to fetch your login keys.</p>${body}`,
+        <p class="lede">Setup needs the internet. A cable works by itself, and you can join Wi-Fi here as well.</p>
+        ${status}${wifi}`,
       actions: [
         { label: "Back", run: () => show("welcome") },
-        { label: "Continue", primary: true, disabled: !state.online, run: () => show("access") },
+        { label: "Continue", primary: true, disabled: !net?.online, run: () => show("access") },
       ],
       enter() {
-        const check = async () => {
-          const was = state.online;
-          state.online = (await api("online")).online;
-          if (!state.online && state.wifi === null) state.wifi = (await api("wifi")).networks;
-          if (was !== state.online || state.wifi !== null && was === null) redraw();
+        const scan = async () => {
+          state.wifi = null;
+          redraw();
+          state.wifi = (await api("wifi")).networks;
+          redraw();
         };
+        const check = async () => {
+          const before = JSON.stringify(state.net);
+          state.net = await api("network");
+          const first = before === "null";
+          if (before !== JSON.stringify(state.net)) redraw();
+          if (first && state.net.wifi) scan();
+        };
+        state.scanWifi = scan;
         check();
         every(4000, check);
       },
       bind() {
+        document.querySelectorAll("input[name=ssid]").forEach((el) => {
+          el.onchange = () => { state.ssid = el.value; };
+        });
+        const scan = $("#wifi-scan");
+        if (scan) scan.onclick = () => state.scanWifi();
         const join = $("#wifi-join");
         if (join) join.onclick = async () => {
-          const ssid = document.querySelector("input[name=ssid]:checked").value;
-          join.disabled = true;
-          join.textContent = "Joining";
-          const res = await api("wifi", { ssid, password: $("#wifi-pass").value });
-          state.wifiError = res.ok ? "" : res.error;
-          if (res.ok) state.online = (await api("online")).online;
+          const ssid = document.querySelector("input[name=ssid]:checked")?.value;
+          if (!ssid || state.busy) return;
+          state.busy = true;
           redraw();
+          const res = await api("wifi", { ssid, password: $("#wifi-pass").value });
+          state.busy = false;
+          state.wifiError = res.ok ? "" : res.error;
+          if (res.ok) { $("#wifi-pass").value = ""; state.net = await api("network"); }
+          redraw();
+          // Once joined, Enter should mean Continue, not join again.
+          if (res.ok) $("#actions [data-main]")?.focus();
         };
       },
     };

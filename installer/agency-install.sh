@@ -222,6 +222,18 @@ else
       "Check again" "Set up Wi-Fi")
     if [ "$choice" = "Set up Wi-Fi" ]; then wifi_setup; fi
   done
+  # Online already (usually by cable). Wi-Fi is still worth offering: the
+  # computer may be moved somewhere without a cable after setup.
+  if nmcli -t -f TYPE device 2>/dev/null | grep -qx wifi &&
+    ! nmcli -t -f TYPE,STATE device 2>/dev/null | grep -q '^wifi:connected'; then
+    screen "1 of 5   network"
+    note "Connected to the internet."
+    printf '\n'
+    if gum confirm --no-show-help --default=false --affirmative "Join Wi-Fi" --negative "Skip" \
+      "Join a Wi-Fi network too? Useful if this computer will run without a cable."; then
+      wifi_setup
+    fi
+  fi
 fi
 
 # -------------------------------------------------------- who can log in ---

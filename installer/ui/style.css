@@ -148,7 +148,7 @@ code, .code { font-family: var(--font-code); font-size: 0.95em; user-select: tex
 .button--primary:hover { background: var(--accent-strong); }
 .button--danger { background: var(--danger); color: #fff; box-shadow: var(--u) var(--u) 0 var(--ink); }
 .button--danger:hover { background: #8f1a11; }
-.button--quiet { border-color: transparent; text-decoration: underline; text-underline-offset: 0.2em; min-width: 0; }
+.button--quiet { background: transparent; border-color: transparent; text-decoration: underline; text-underline-offset: 0.2em; min-width: 0; }
 
 :focus-visible { outline: calc(var(--u) * 0.75) solid var(--accent); outline-offset: var(--u); }
 

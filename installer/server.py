@@ -86,11 +86,35 @@ def online():
     return ok
 
 
+def split_fields(line):
+    """Split one line of `nmcli -t` output, which escapes colons inside values."""
+    return [p.replace("\\:", ":") for p in re.split(r"(?<!\\):", line)]
+
+
+def network():
+    """Whether we are online, and how: by cable, over Wi-Fi, or not at all."""
+    ok, out, _ = sh("nmcli", "-t", "-f", "DEVICE,TYPE,STATE,CONNECTION", "device")
+    wired, has_wifi, ssid = False, False, ""
+    for line in out.splitlines() if ok else []:
+        parts = split_fields(line)
+        if len(parts) < 4:
+            continue
+        _dev, kind, status, connection = parts[:4]
+        up = status.startswith("connected")
+        if kind == "ethernet" and up:
+            wired = True
+        if kind == "wifi":
+            has_wifi = True
+            if up:
+                ssid = connection
+    return {"online": online(), "wired": wired, "wifi": has_wifi, "ssid": ssid}
+
+
 def wifi_list():
     ok, out, _ = sh("nmcli", "-t", "-f", "SSID,SIGNAL,SECURITY", "device", "wifi", "list", "--rescan", "yes")
     best = {}
     for line in out.splitlines() if ok else []:
-        parts = [p.replace("\\:", ":") for p in re.split(r"(?<!\\):", line)]
+        parts = split_fields(line)
         if len(parts) < 3 or not parts[0]:
             continue
         ssid, signal, security = parts[0], int(parts[1] or 0), parts[2]
@@ -315,8 +339,8 @@ class Handler(BaseHTTPRequestHandler):
         path = self.path.split("?")[0]
         if path == "/api/info":
             return self.send_json(info())
-        if path == "/api/online":
-            return self.send_json({"online": online()})
+        if path == "/api/network":
+            return self.send_json(network())
         if path == "/api/wifi":
             return self.send_json({"networks": wifi_list()})
         if path == "/api/disks":
