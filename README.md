@@ -6,67 +6,82 @@
 </p>
 
 <p align="center">
-  <b>A computer for agents.</b><br>
-  NixOS on a laptop nobody sits at. Agents get root, you get a link.
+  NixOS config and unattended installer for a laptop used only by AI agents.
 </p>
 
-Your computer is built around you sitting at it. This one isn't. Agents run the whole thing, it lives lid-closed in a corner, and you drop in over the network when they need a login or you want to watch. The entire machine is this repo, so when an agent breaks it you roll back, and when you want another one you flash a stick.
+The agents have sudo. The laptop runs with the lid closed and you reach it over SSH or Tailscale. The whole system is defined in this repo, so a bad change can be rolled back at boot and the machine can be rebuilt from a USB stick.
 
-| Part | Does |
+| Part | What it is |
 |---|---|
-| **`agent`** | the one account, with passwordless sudo |
-| **Display `:1`** | a desktop that only exists in memory, for GUI apps and computer use |
-| **noVNC** | that desktop in a browser tab, so you can watch or take over |
-| **Tailscale** | the only way in from outside your network |
-| **Generations** | every system change is a boot entry you can go back to |
-| **The stick** | a USB installer that wipes the laptop and builds all of the above |
+| `agent` | The only account. Passwordless sudo. |
+| Display `:1` | A virtual X11 desktop (Xvnc + Openbox) for GUI apps and computer use. |
+| noVNC | The same desktop in a browser, at port 6081. |
+| Tailscale | Remote access. Only SSH is open on the LAN. |
+| Generations | Each rebuild adds a boot menu entry. Pick an older one to undo. |
+| Installer | A USB image that erases the laptop and installs all of the above. |
 
 ## Install
 
-You need the laptop, a USB stick (8 GB+) and a network cable.
+Needs a USB stick (8 GB or more) and a wired network connection.
 
-1. Put an SSH key on your GitHub account. The installer copies your public keys from there, and there is no password login.
-2. Grab the ISO from **Actions → Build installer ISO** (the `agency-installer` artifact) and flash it with balenaEtcher.
-3. In the BIOS: Secure Boot off, UEFI on, TPM on.
-4. Boot the stick and walk away. It counts down 30 seconds, erases the internal disk, installs, and reboots. Hold the power button during the countdown if you change your mind.
+1. Add an SSH key to your GitHub account if it has none. The installer fetches your public keys from GitHub. Password login is disabled.
+2. Download the `agency-installer` artifact from **Actions → Build installer ISO** and flash it with balenaEtcher or `dd`.
+3. BIOS settings: Secure Boot off, UEFI boot, TPM on.
+4. Boot the stick. After a 30 second countdown it erases the internal disk, installs, and reboots. Holding the power button during the countdown cancels it.
+5. From another machine on the same network:
 
 ```sh
 ssh agent@agency.local
-sudo tailscale up --ssh    # open the link it prints
+sudo tailscale up --ssh
 ```
 
-Want it fully hands-off? Format a second stick as FAT, label it `AGENCY`, and drop a one-time Tailscale key on it in a file called `tailscale-authkey`. Plug in both and the machine joins your tailnet by itself.
+To skip step 5, format a second stick as FAT with the label `AGENCY` and put a one-time Tailscale auth key on it in a file named `tailscale-authkey`. With both sticks plugged in, the machine joins your tailnet on first boot.
 
-The installer won't touch the disk if the machine isn't the brand it expects, if agency is already installed (so a forgotten stick can't reinstall in a loop), if there's no TPM, or if it can't find an SSH key. `sudo agency-install --force` on Alt+F2 overrides the first two.
+The installer stops before touching the disk if:
+
+- the machine's vendor doesn't match `vendorMatch` in `settings.nix`
+- the disk already has an agency install
+- there is no TPM 2.0, or the machine booted in legacy mode
+- it found no SSH public key
+
+`sudo agency-install --force` (shell on Alt+F2) skips the first two checks.
 
 ## Use
 
-Install an agent CLI, point it at [`AGENTS.md`](AGENTS.md), and let it finish the setup. That file is the manual for agents: how the machine works, how to change it, and what's left to do.
+Install an agent CLI under the `agent` account and have it read [`AGENTS.md`](AGENTS.md). That file explains the machine to agents and lists the setup that is still to do.
 
 ```sh
-gui chromium                               # open an app on the virtual desktop
-DISPLAY=:1 scrot /tmp/screen.png           # look at it
-DISPLAY=:1 xdotool mousemove 640 400 click 1
+gui chromium                                   # start an app on the virtual desktop
+DISPLAY=:1 scrot /tmp/screen.png               # screenshot
+DISPLAY=:1 xdotool mousemove 640 400 click 1   # click
 
-cd /etc/nixos && sudo nixos-rebuild switch --flake .   # change the system
+cd /etc/nixos
+sudo nixos-rebuild switch --flake .            # apply a config change
 ```
 
-You watch at `http://agency:6081/vnc.html`. When a site wants a password or 2FA, do it there once; the browser stays signed in for the agents.
+The desktop is at `http://agency:6081/vnc.html` over Tailscale. Log in to websites there yourself; the browser profile persists, so agents stay signed in.
 
-Downloaded binaries, AppImages and `npm install -g` all work like on any other Linux. Docker and distrobox are there for anything that still complains.
+Prebuilt binaries, AppImages and `npm install -g` work without extra steps (`nix-ld` and AppImage support are enabled). Docker and distrobox are installed.
 
-## Is it any good
+## Status
 
-Not proven yet. The config evaluates, the install script passes lint and CI builds the ISO, but it has never booted on a real laptop. The disk unlock and the virtual desktop are the two parts most likely to need a fix on the first run.
+Untested on hardware. The config evaluates, the install script passes shellcheck, and CI builds the ISO. The TPM enrolment and the virtual desktop services have not been run on a real machine.
 
-It's not perfect either. Secure Boot is off, so the encryption protects a stolen disk but not a stolen laptop that someone boots from their own stick. There's one desktop, not one per agent. And the Nvidia card just sits there. All of that is on the list in `AGENTS.md`.
+Known gaps:
 
-One more thing: agents hold whatever you sign them in to. Make credentials for this machine (a fresh SSH key, scoped tokens) so you can revoke them without touching anything else. And never commit secrets here.
+- Secure Boot is off. TPM unlock protects the data if the disk is removed, but not if someone boots another OS on the laptop.
+- There is one virtual desktop, not one per agent.
+- The Nvidia GPU is not configured.
+- No secrets management yet.
 
-## Make it yours
+These are listed as tasks in `AGENTS.md`.
 
-It's set up for an MSI GF63 Thin 11UC. For anything else, change the host name, disk, `vendorMatch` and `githubUser` in [`settings.nix`](settings.nix), swap [`hosts/agency/hardware.nix`](hosts/agency/hardware.nix) (the file says how), and push. CI builds you a new ISO.
+The disk recovery key is printed at the end of the install and saved to `/root/luks-recovery-key.txt`. Move it somewhere safe.
+
+## Other hardware
+
+The config targets an MSI GF63 Thin 11UC. For another machine, edit [`settings.nix`](settings.nix) (host name, disk, `vendorMatch`, `githubUser`), replace [`hosts/agency/hardware.nix`](hosts/agency/hardware.nix) as described in that file, and push. CI builds a new ISO.
 
 ## Credits
 
-Built on NixOS, disko, Tailscale, TigerVNC, noVNC and Openbox. The idea of giving agents their own Linux box comes from people like Theo, who have been doing it by hand.
+NixOS, disko, Tailscale, TigerVNC, noVNC, Openbox. The logo type is [Pixelify Sans](https://github.com/eifetx/Pixelify-Sans) (SIL Open Font License).
