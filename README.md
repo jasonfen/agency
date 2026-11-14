@@ -13,6 +13,10 @@ Agents are bad at sharing a computer. They want the mouse, the screen and the br
 
 If an agent breaks the system, reboot and pick yesterday's version from the boot menu.
 
+<p align="center">
+  <img src="docs/setup-welcome.png" alt="The first screen of the agency installer" width="720">
+</p>
+
 ## Install
 
 1. Make sure your GitHub account has an SSH key on it, because that's how you'll log in.

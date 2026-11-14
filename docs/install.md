@@ -19,6 +19,8 @@ The stick boots into a setup screen on the laptop's own display. It works with t
 4. **Tailscale.** Optional. A QR code appears; scan it with your phone and approve the device. The sign-in is carried over to the installed system.
 5. **Apps.** Pick agents (Claude Code, Codex and others) and tools (browser, Docker and so on). The list comes from [`apps.nix`](../apps.nix).
 
+![The disk, Tailscale, apps, review, installing and done screens](setup-screens.png)
+
 Then it shows a summary. Nothing is erased until you press **Erase disk and install** there; that button never responds to Enter by accident.
 
 After the install it shows the disk recovery key as text and as a QR code. Save it.
