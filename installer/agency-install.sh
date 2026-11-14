@@ -17,6 +17,8 @@
 #   --disk /dev/NAME        which disk to erase
 #   --apps "ID ID ..."      which apps from apps.nix to install
 #   --tailscale-state FILE  a saved Tailscale sign-in to carry over
+#   --signin-home DIR       a home folder with sign-ins (GitHub, agent CLIs)
+#                           to carry over to the agent account
 #   --force                 skip the vendor and already-installed checks
 #   --yes                   skip the 30 second countdown
 #   --no-reboot             stop after installing; do not restart
@@ -40,6 +42,7 @@ host=$AGENCY_HOSTNAME
 apps_arg=""
 apps_given=0
 ts_state=""
+signin_home=""
 countdown=1
 reboot=1
 args=("$@")
@@ -66,6 +69,10 @@ while [ $# -gt 0 ]; do
       ;;
     --tailscale-state)
       ts_state=${2:-}
+      shift
+      ;;
+    --signin-home)
+      signin_home=${2:-}
       shift
       ;;
     --yes) countdown=0 ;;
@@ -555,6 +562,24 @@ elif [ "$host" != "$AGENCY_HOSTNAME" ]; then
   touch "$notes/rebuild"
 fi
 if [ "${#chosen_npm[@]}" -gt 0 ]; then printf '%s\n' "${chosen_npm[@]}" >"$notes/npm-packages"; fi
+
+# Sign-ins made on the setup screen: only the credential files, which the
+# first start moves into the agent's home. Their contents are never shown.
+if [ -n "$signin_home" ] && [ -d "$signin_home" ]; then
+  carried=0
+  for item in .config/gh .claude .claude.json .codex .local/share/opencode; do
+    if [ -e "$signin_home/$item" ]; then
+      mkdir -p "$notes/home/$(dirname "$item")"
+      cp -a "$signin_home/$item" "$notes/home/$item"
+      carried=1
+    fi
+  done
+  if [ "$carried" = 1 ]; then
+    chown -R root:root "$notes/home"
+    chmod -R go-rwx "$notes/home"
+    chmod 700 "$notes/home"
+  fi
+fi
 # The commit this system was built from, so `agency update` knows where
 # the machine's own changes start.
 if [ -n "${AGENCY_REV:-}" ]; then printf '%s\n' "$AGENCY_REV" >/mnt/var/lib/agency/source-rev; fi

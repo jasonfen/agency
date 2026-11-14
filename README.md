@@ -45,4 +45,4 @@ agency update                      # get the newest agency
 agency secret set OPENAI_API_KEY   # a key your agents can use
 ```
 
-Watch their desktop at `http://agency:6081/vnc.html` over Tailscale.
+Or use the dashboard: the laptop's screen shows its address as a QR code. It works over Tailscale only.

@@ -29,6 +29,9 @@
   # the GUI at the same time its own. `agency desktop add` changes this.
   desktops = 1;
 
+  # Tailscale logins, besides this machine's owner, that may use the web dashboard.
+  dashboardUsers = [ ];
+
   # The repo this machine updates from with `agency update`. Point it at
   # your fork to update from there.
   repo = "https://github.com/makors/agency";

@@ -10,6 +10,7 @@ const STEPS = [
   ["disk", "Disk"],
   ["tailscale", "Tailscale"],
   ["apps", "Apps"],
+  ["signin", "Sign in"],
   ["review", "Review"],
 ];
 
@@ -29,6 +30,10 @@ const state = {
   disk: "",
   tailscale: { state: "idle" },
   apps: new Set(),
+  signin: null,
+  signinOpen: "",
+  termOpen: {},
+  termAsked: {},
   install: null,
   busy: false,
 };
@@ -303,7 +308,7 @@ const screens = {
         <div class="columns">${group("Agents", "npm")}${group("Tools", "system")}</div>`,
       actions: [
         { label: "Back", run: () => show("tailscale") },
-        { label: "Continue", primary: true, run: () => show("review") },
+        { label: "Continue", primary: true, run: () => show("signin") },
       ],
       bind() {
         document.querySelectorAll("input[name=app]").forEach((el) => {
@@ -314,9 +319,37 @@ const screens = {
     };
   },
 
+  signin() {
+    const tools = state.signin?.tools || [];
+    return {
+      html: `<h1>Sign in</h1>
+        <p class="lede">This step is optional; you can do this later from the agency dashboard.</p>
+        ${tools.length ? `<div class="accounts">${tools.map(accountRow).join("")}</div>` : ""}`,
+      actions: [
+        { label: "Back", run: () => show("apps") },
+        { label: "Continue", primary: true, run: () => show("review") },
+      ],
+      async enter() {
+        const first = !state.signin;
+        state.signin = await api("signin");
+        if (first) redraw();
+        every(1000, async () => {
+          const before = state.signin;
+          state.signin = await api("signin");
+          if (state.screen === "signin") patchAccounts(before);
+        });
+      },
+      bind() {
+        (state.signin?.tools || []).forEach((t) => bindAccount(t.id));
+      },
+    };
+  },
+
   review() {
     const disk = state.disks.find((d) => d.path === state.disk);
     const apps = state.info.apps.filter((a) => state.apps.has(a.id)).map((a) => a.label);
+    const signedIn = (state.signin?.tools || []).filter((t) => t.state === "done")
+      .map((t) => t.who ? `${t.label} (${t.who})` : t.label);
     const also = state.earlier && state.earlier !== state.disk
       ? ` The earlier install on <code>${esc(state.earlier)}</code> will be erased as well.` : "";
     return {
@@ -328,10 +361,11 @@ const screens = {
           <dt>Disk</dt><dd>${esc(disk.model)}, ${esc(disk.size)} <span class="muted code">${esc(disk.path)}</span></dd>
           <dt>Tailscale</dt><dd>${state.tailscale.state === "connected" ? "Connected" : "Not set up"}</dd>
           <dt>Apps</dt><dd>${apps.length ? esc(apps.join(", ")) : "None"}</dd>
+          <dt>Signed in</dt><dd>${signedIn.length ? esc(signedIn.join(", ")) : "None"}</dd>
         </dl>
         <div class="notice notice--bad"><strong>Everything on ${esc(disk.model)} will be erased.</strong>${also}</div>`,
       actions: [
-        { label: "Back", run: () => show("apps") },
+        { label: "Back", run: () => show("signin") },
         {
           label: "Erase disk and install", danger: true,
           async run() {
@@ -420,6 +454,145 @@ async function pollTailscale() {
     }
     if (before !== state.tailscale.state + state.tailscale.url) redraw();
   });
+}
+
+// -------------------------------------------------------------- sign in ---
+// The sign-in rows are patched in place while a login runs, not redrawn:
+// a redraw would reload the terminal and clear a half-typed code.
+
+const tool = (id) => state.signin.tools.find((t) => t.id === id);
+
+function accountRow(t) {
+  const open = state.signinOpen === t.id && t.state === "running";
+  const sub = t.state === "done" ? esc(t.who || "Signed in")
+    : t.state === "failed" ? esc(t.error) : "";
+  const end = t.state === "done"
+    ? `<svg class="account-tick" role="img" aria-label="Signed in"><use href="#tick"/></svg>`
+    : open ? "" : `<button class="button button--small" data-signin="${t.id}">Sign in</button>`;
+  return `<div class="account" id="acct-${t.id}">
+    <div class="account-head">
+      <div><p class="name">${esc(t.label)}</p>${sub ? `<p class="detail">${sub}</p>` : ""}</div>
+      ${end}
+    </div>
+    ${open ? `<div class="account-panel">
+      <div class="scan" id="${t.id}-scan">
+        <div class="qr" id="${t.id}-qr"></div>
+        <div class="account-steps">
+          <p id="${t.id}-hint"></p>
+          <p class="keycode" id="${t.id}-code" hidden></p>
+          <div id="${t.id}-paste" hidden>
+            <p>Then type the code it shows you here.</p>
+            <div class="paste">
+              <input class="input" id="${t.id}-input" aria-label="Code" autocomplete="off" autocapitalize="off" spellcheck="false">
+              <button class="button" id="${t.id}-done">Done</button>
+            </div>
+          </div>
+          <p class="account-links">
+            <button class="link" id="${t.id}-term">${state.termOpen[t.id] ? "Hide the terminal" : "Use a terminal instead"}</button>
+            <button class="link" id="${t.id}-cancel">Cancel</button>
+          </p>
+        </div>
+      </div>
+      <div class="term" id="${t.id}-termbox" hidden></div>
+    </div>` : ""}
+  </div>`;
+}
+
+function bindAccount(id) {
+  const row = document.getElementById(`acct-${id}`);
+  if (!row) return;
+  row.querySelector("[data-signin]")?.addEventListener("click", async () => {
+    // One row open at a time. A login left running in another row keeps
+    // running; its Sign in button opens it again.
+    const was = state.signinOpen;
+    state.signinOpen = id;
+    if (was && was !== id) redrawAccount(was);
+    state.signin = await api(`signin/${id}/start`, {});
+    redrawAccount(id);
+  });
+  if (state.signinOpen !== id || tool(id).state !== "running") return;
+  const input = $(`#${id}-input`);
+  const send = async () => {
+    const text = input.value.trim();
+    if (!text) return input.focus();
+    input.value = "";
+    await api(`signin/${id}/input`, { text });
+  };
+  $(`#${id}-done`).onclick = send;
+  input.onkeydown = (e) => {
+    if (e.key === "Enter") { e.preventDefault(); e.stopPropagation(); send(); }
+  };
+  $(`#${id}-term`).onclick = () => setTerminal(id, !state.termOpen[id]);
+  $(`#${id}-cancel`).onclick = async () => {
+    state.signin = await api(`signin/${id}/cancel`, {});
+    state.signinOpen = "";
+    redrawAccount(id);
+  };
+  if (state.termOpen[id]) setTerminal(id, true);
+  fillAccount(tool(id), null);
+}
+
+function redrawAccount(id) {
+  const row = document.getElementById(`acct-${id}`);
+  if (!row) return;
+  if (tool(id).state !== "running") {
+    state.termOpen[id] = false;
+    delete state.termAsked[id];
+  }
+  row.outerHTML = accountRow(tool(id));
+  bindAccount(id);
+}
+
+// Show or hide the terminal attached to this row's login.
+function setTerminal(id, on) {
+  state.termOpen[id] = on;
+  const box = $(`#${id}-termbox`);
+  if (!box) return;
+  $(`#${id}-term`).textContent = on ? "Hide the terminal" : "Use a terminal instead";
+  box.hidden = !on;
+  if (!on) { box.innerHTML = ""; return; }
+  if (!box.firstChild) {
+    const frame = document.createElement("iframe");
+    frame.title = "Terminal";
+    frame.src = `${state.signin.terminal}?arg=${encodeURIComponent("=agency-" + id)}`;
+    frame.onload = () => frame.focus();
+    box.append(frame);
+  }
+}
+
+// Update the open row from the latest state, touching only what changed.
+function fillAccount(t, old) {
+  const qr = $(`#${t.id}-qr`);
+  if (!qr) return;
+  if (qr.dataset.url !== t.url) { qr.innerHTML = t.qr; qr.dataset.url = t.url; }
+  $(`#${t.id}-scan`).classList.toggle("no-qr", !t.url);
+  qr.hidden = !t.url;
+  // No address after a few seconds: the program is asking something first
+  // (OpenCode asks which provider). That needs the keyboard.
+  const asking = !t.url && t.age > 3;
+  if (asking && !state.termAsked[t.id]) {
+    state.termAsked[t.id] = true;
+    setTerminal(t.id, true);
+  }
+  $(`#${t.id}-hint`).textContent = t.url ? "Scan with your phone and sign in."
+    : asking ? "Answer the question in the terminal below." : "Starting the sign-in.";
+  const code = $(`#${t.id}-code`);
+  code.textContent = t.code;
+  code.hidden = !t.code;
+  $(`#${t.id}-paste`).hidden = !t.asks;
+  if (t.asks && !old?.asks && !state.termOpen[t.id]) $(`#${t.id}-input`).focus();
+}
+
+function patchAccounts(before) {
+  for (const t of state.signin.tools) {
+    const old = before?.tools.find((o) => o.id === t.id);
+    if (!old || old.state !== t.state || old.who !== t.who || old.error !== t.error) {
+      if (t.state !== "running" && state.signinOpen === t.id) state.signinOpen = "";
+      redrawAccount(t.id);
+    } else if (state.signinOpen === t.id) {
+      fillAccount(t, old);
+    }
+  }
 }
 
 // ------------------------------------------------------------- drawing ---

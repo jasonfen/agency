@@ -3,7 +3,8 @@
 The setup screen is a web page (installer/ui) shown fullscreen on the machine
 being installed. This small server, on localhost only, gives that page what
 it needs: the network state, SSH keys, the list of disks, a Tailscale
-sign-in, and a way to start the install and watch it.
+sign-in, optional sign-ins to GitHub and the agent CLIs, and a way to start
+the install and watch it.
 
 It installs nothing itself. The install is done by agency-install, the same
 script the text wizard and unattended mode use; this server runs it with the
@@ -234,6 +235,210 @@ class Tailscale:
                 self.state.update(state="failed", error="Tailscale did not connect. Try again, or skip and set it up later.")
 
 
+# ---------------------------------------------------------------- sign in ---
+# Optional sign-ins to GitHub and the agent CLIs, so the new machine starts
+# signed in. Each login runs in its own tmux session, with one home folder
+# shared by all of them. The server reads the session's screen for the
+# sign-in address and any one-time code; "Use a terminal instead" (ttyd)
+# attaches to the same session, so both always show the same login.
+# The install copies the credential files from that home to the agent.
+
+SIGNIN_HOME = WORK / "home"
+TTYD_PORT = int(os.environ.get("AGENCY_TTYD_PORT", "7374"))
+TMUX = ["tmux", "-L", os.environ.get("AGENCY_TMUX_SOCKET", "agency-signin"), "-f", str(WORK / "tmux.conf")]
+TMUX_CONF = "set -g remain-on-exit on\nset -g status off\nset -g history-limit 5000\nset -g mouse on\n"
+
+SIGNIN_TOOLS = {
+    "github": {
+        "label": "GitHub",
+        # --insecure-storage: the installer has no keyring, and the token has
+        # to be in a file to be carried over.
+        "cmd": "gh auth login --hostname github.com --git-protocol https --web --insecure-storage",
+        "device": True,
+        # Questions answered with Enter: yes to using it for git, and "press
+        # Enter to open a browser" (there is none; BROWSER=true).
+        "enter": [r"Authenticate Git with your GitHub credentials\?", r"Press Enter to open"],
+    },
+    "claude": {"label": "Claude Code", "cmd": "claude auth login", "device": False, "enter": []},
+    "codex": {"label": "Codex", "cmd": "codex login --device-auth || codex login", "device": True, "enter": []},
+    "opencode": {"label": "OpenCode", "cmd": "opencode auth login", "device": False, "enter": []},
+}
+
+URL = re.compile(r"https://[^\s\"'<>│]+")
+DEVICE_CODE = re.compile(r"(?<![A-Za-z0-9-])[A-Z0-9]{4}-[A-Z0-9]{4,5}(?![A-Za-z0-9-])")
+ASKS_CODE = re.compile(r"paste (the |your )?(authorization )?code|enter (the |your )?(authorization )?code"
+                       r"|enter your api key", re.I)
+
+
+def tmux(*args, timeout=10):
+    return sh(*TMUX, *args, timeout=timeout)
+
+
+def as_signin_user(*cmd, timeout=30):
+    """Run a command with the sign-in home, e.g. to ask who is signed in."""
+    env = {**os.environ, "HOME": str(SIGNIN_HOME)}
+    try:
+        p = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout, env=env, cwd=SIGNIN_HOME)
+        return p.returncode == 0, p.stdout
+    except (OSError, subprocess.TimeoutExpired):
+        return False, ""
+
+
+def signed_in_as(tool):
+    """None if not signed in; otherwise who (may be empty)."""
+    if tool == "github":
+        ok, out = as_signin_user("gh", "api", "user", "--jq", ".login")
+        return out.strip() if ok else None
+    if tool == "claude":
+        ok, _ = as_signin_user("claude", "auth", "status")
+        return "" if ok else None
+    if tool == "codex":
+        ok, _ = as_signin_user("codex", "login", "status")
+        return "" if ok else None
+    if tool == "opencode":
+        try:
+            auth = json.loads((SIGNIN_HOME / ".local/share/opencode/auth.json").read_text())
+        except (OSError, ValueError):
+            return None
+        return "" if auth else None
+    return None
+
+
+class SignIn:
+    def __init__(self):
+        self.lock = threading.Lock()
+        self.ttyd = None
+        self.states = {tool: self.blank() for tool in SIGNIN_TOOLS}
+
+    @staticmethod
+    def blank():
+        return {"state": "idle", "url": "", "qr": "", "code": "", "asks": False, "who": "", "error": "",
+                "started": 0.0}
+
+    @staticmethod
+    def target(tool):
+        return "=agency-" + tool  # "=": exact name, no prefix matching
+
+    @staticmethod
+    def pane(tool):
+        return "=agency-" + tool + ":"
+
+    def view(self):
+        now = time.time()
+        tools = []
+        with self.lock:
+            for tool, spec in SIGNIN_TOOLS.items():
+                st = dict(self.states[tool])
+                started = st.pop("started")
+                st["age"] = now - started if started else 0
+                tools.append({"id": tool, "label": spec["label"], **st})
+        return {"tools": tools, "terminal": f"http://127.0.0.1:{TTYD_PORT}/"}
+
+    def home(self):
+        """The sign-in home if anything was signed in, else ""."""
+        with self.lock:
+            return str(SIGNIN_HOME) if any(s["state"] == "done" for s in self.states.values()) else ""
+
+    def start_ttyd(self):
+        if self.ttyd and self.ttyd.poll() is None:
+            return
+        theme = json.dumps({"background": "#ffffff", "foreground": "#15201a", "cursor": "#15201a",
+                            "cursorAccent": "#ffffff", "selectionBackground": "#c6d0c8"})
+        try:
+            # -a: the page names the session in the address (?arg==agency-github).
+            self.ttyd = subprocess.Popen(
+                ["ttyd", "-i", "127.0.0.1", "-p", str(TTYD_PORT), "-W", "-a", "-O",
+                 "-t", "fontSize=15", "-t", f"theme={theme}", "-t", "disableLeaveAlert=true",
+                 "-t", "disableResizeOverlay=true", "-t", "titleFixed=agency",
+                 *TMUX, "attach-session", "-t"],
+                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        except OSError:
+            self.ttyd = None
+
+    def start(self, tool):
+        with self.lock:
+            if self.states[tool]["state"] in ("running", "done"):
+                return
+            self.states[tool] = {**self.blank(), "state": "running", "started": time.time()}
+        SIGNIN_HOME.mkdir(parents=True, exist_ok=True)
+        os.chmod(SIGNIN_HOME, 0o700)
+        (WORK / "tmux.conf").write_text(TMUX_CONF)
+        self.start_ttyd()
+        target = self.target(tool)
+        tmux("kill-session", "-t", target)
+        # Wide, so that long sign-in addresses are not wrapped by the program.
+        ok, _, _ = tmux("new-session", "-d", "-s", target[1:], "-x", "400", "-y", "40", "-c", str(SIGNIN_HOME),
+                        "env", f"HOME={SIGNIN_HOME}", "BROWSER=true", "GH_BROWSER=true",
+                        "TERM=xterm-256color", "DISABLE_AUTOUPDATER=1",
+                        "sh", "-c", SIGNIN_TOOLS[tool]["cmd"])
+        if not ok:
+            with self.lock:
+                self.states[tool].update(state="failed", error="Could not start the sign-in.")
+            return
+        threading.Thread(target=self._watch, args=(tool,), daemon=True).start()
+
+    def cancel(self, tool):
+        tmux("kill-session", "-t", self.target(tool))
+        with self.lock:
+            if self.states[tool]["state"] != "done":
+                self.states[tool] = self.blank()
+
+    def input(self, tool, text):
+        text = text.replace("\r", "").replace("\n", "").strip()[:4096]
+        if text:
+            tmux("send-keys", "-t", self.pane(tool), "-l", text)
+        tmux("send-keys", "-t", self.pane(tool), "Enter")
+
+    def _watch(self, tool):
+        spec = SIGNIN_TOOLS[tool]
+        target, pane = self.target(tool), self.pane(tool)
+        answered = set()
+        while True:
+            time.sleep(0.5)
+            with self.lock:
+                if self.states[tool]["state"] != "running":
+                    return
+            ok, out, _ = tmux("display-message", "-p", "-t", pane, "#{pane_dead}")
+            if not ok:  # the session is gone: cancelled
+                with self.lock:
+                    if self.states[tool]["state"] == "running":
+                        self.states[tool] = self.blank()
+                return
+            ok, screen, _ = tmux("capture-pane", "-p", "-J", "-S", "-2000", "-t", pane)
+            screen = screen if ok else ""
+            if out.strip() != "1":
+                for pattern in spec["enter"]:
+                    if pattern not in answered and re.search(pattern, screen):
+                        answered.add(pattern)
+                        tmux("send-keys", "-t", pane, "Enter")
+                self._read(tool, screen)
+                continue
+            # The login program has finished. Did it work?
+            who = signed_in_as(tool)
+            tmux("kill-session", "-t", target)
+            with self.lock:
+                if who is not None:
+                    self.states[tool] = {**self.blank(), "state": "done", "who": who}
+                else:
+                    self.states[tool] = {**self.blank(), "state": "failed", "error": "Not signed in. Try again."}
+            return
+
+    def _read(self, tool, screen):
+        urls = [u.rstrip(".,;:)]") for u in URL.findall(screen)]
+        codes = DEVICE_CODE.findall(URL.sub(" ", screen)) if SIGNIN_TOOLS[tool]["device"] else []
+        tail = "\n".join([line for line in screen.splitlines() if line.strip()][-6:])
+        with self.lock:
+            st = self.states[tool]
+            if urls:
+                url = urls[-1]
+                # A narrower terminal can wrap the address later; keep the
+                # full one.
+                if url != st["url"] and not st["url"].startswith(url):
+                    st.update(url=url, qr=qr_svg(url))
+            st["code"] = codes[-1] if codes else ""
+            st["asks"] = bool(ASKS_CODE.search(tail))
+
+
 # ---------------------------------------------------------------- install ---
 
 PHASES = [
@@ -262,7 +467,7 @@ class Install:
             ok, out, _ = sh("nix-store", "-qR", SYSTEM, timeout=120)
             self.total_paths = len(out.split()) if ok else 0
 
-    def start(self, name, disk, user, apps, tailscale_state):
+    def start(self, name, disk, user, apps, tailscale_state, signin_home):
         with self.lock:
             if self.state["state"] == "running":
                 return
@@ -272,6 +477,8 @@ class Install:
                "--hostname", name, "--github-user", user, "--disk", disk, "--apps", " ".join(apps)]
         if tailscale_state:
             cmd += ["--tailscale-state", tailscale_state]
+        if signin_home:
+            cmd += ["--signin-home", signin_home]
         threading.Thread(target=self._run, args=(cmd,), daemon=True).start()
 
     def _run(self, cmd):
@@ -309,6 +516,7 @@ class Install:
 
 
 tailscale = Tailscale()
+signin = SignIn()
 install = Install()
 
 
@@ -347,6 +555,8 @@ class Handler(BaseHTTPRequestHandler):
             return self.send_json(disks())
         if path == "/api/tailscale":
             return self.send_json(tailscale.state)
+        if path == "/api/signin":
+            return self.send_json(signin.view())
         if path == "/api/install":
             return self.send_json({**install.state, "phases": [title for title, _ in PHASES]})
         # Static files, from the UI directory only.
@@ -378,6 +588,16 @@ class Handler(BaseHTTPRequestHandler):
         if path == "/api/tailscale/cancel":
             tailscale.cancel()
             return self.send_json(tailscale.state)
+        found = re.fullmatch(r"/api/signin/([a-z]+)/(start|cancel|input)", path)
+        if found and found.group(1) in SIGNIN_TOOLS:
+            tool, verb = found.groups()
+            if verb == "start":
+                signin.start(tool)
+            elif verb == "cancel":
+                signin.cancel(tool)
+            else:
+                signin.input(tool, str(data.get("text", "")))
+            return self.send_json(signin.view())
         if path == "/api/install":
             known = {a["id"] for a in info()["apps"]}
             apps = [a for a in data.get("apps", []) if a in known]
@@ -385,7 +605,7 @@ class Handler(BaseHTTPRequestHandler):
             if (data.get("disk") not in valid_disks or not USERNAME.match(data.get("user", ""))
                     or not MACHINE_NAME.match(data.get("name", ""))):
                 return self.send_json({"error": "bad request"}, 400)
-            install.start(data["name"], data["disk"], data["user"], apps, tailscale.state_file())
+            install.start(data["name"], data["disk"], data["user"], apps, tailscale.state_file(), signin.home())
             return self.send_json({"ok": True})
         if path == "/api/restart":
             subprocess.Popen(["systemctl", "reboot"])

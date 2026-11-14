@@ -6,6 +6,8 @@
 #
 #   rebuild        rebuild the system, because settings.nix was changed
 #   npm-packages   tools to `npm install -g` for the agent account
+#   home/          sign-ins made on the setup screen (GitHub, agent CLIs),
+#                  copied into the agent's home
 #
 # Then it links /etc/nixos to the agency repo on GitHub (`agency setup-repo`),
 # so `agency update` works. If that fails, `agency update` does it later.
@@ -20,6 +22,8 @@
 }:
 let
   notes = "/var/lib/agency/firstboot";
+  user = settings.user;
+  home = config.users.users.${settings.user}.home;
 in
 {
   systemd.services.agency-firstboot = {
@@ -37,6 +41,7 @@ in
       pkgs.git
       pkgs.curl
       pkgs.coreutils
+      pkgs.findutils
       pkgs.util-linux
     ];
     environment.HOME = "/root";
@@ -60,6 +65,18 @@ in
         runuser -l ${settings.user} -c "npm install -g $(tr '\n' ' ' <${notes}/npm-packages)"
       fi
       rm -f ${notes}/npm-packages
+
+      if [ -d ${notes}/home ]; then
+        cp -a ${notes}/home/. ${home}/
+        # Hand over everything that came, including folders cp created and
+        # the home folder itself (cp -a gave it the copy's owner).
+        (cd ${notes}/home && find . -print0) |
+          (cd ${home} && xargs -0 -r chown -h ${user}:)
+        if [ -e ${notes}/home/.config/gh/hosts.yml ]; then
+          runuser -l ${user} -c "gh auth setup-git" || true
+        fi
+        rm -rf ${notes}/home
+      fi
 
       runuser -l ${settings.user} -c "agency setup-repo" || true
 

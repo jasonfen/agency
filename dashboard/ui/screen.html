@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>agency</title>
+  <link rel="icon" href="data:,">
+  <link rel="stylesheet" href="screen.css">
+</head>
+<body>
+  <!-- What the laptop's own display shows. Nothing here is secret: the
+       page needs no login (see dashboard/server.py). -->
+  <div class="screen">
+    <div class="brand">
+      <svg viewBox="0 0 54 81" shape-rendering="crispEdges" aria-hidden="true"><path class="tip" d="M0 0h9v9h-9z"/><path d="M0 9h18v9h-18zM0 18h27v9h-27zM0 27h36v9h-36zM0 36h45v9h-45zM0 45h54v9h-54zM0 54h36v9h-36zM0 63h9v9h-9zM27 63h18v9h-18zM36 72h18v9h-18z"/></svg>
+      <span>agency</span>
+    </div>
+
+    <div class="middle">
+      <div class="facts">
+        <div class="title">
+          <h1 id="name"></h1>
+          <p class="state"><span class="square"></span><span id="state">Running</span></p>
+        </div>
+        <div class="rows">
+          <span class="label">Tailscale</span><span id="tailscale" class="mono"></span>
+          <span class="label">Desktops</span><span id="desktops"></span>
+          <span class="label">System</span><span id="system"></span>
+        </div>
+      </div>
+
+      <div class="code" id="code"></div>
+    </div>
+
+    <p class="foot">To open a console, press Ctrl+Alt+F2.</p>
+  </div>
+  <script src="screen.js"></script>
+</body>
+</html>

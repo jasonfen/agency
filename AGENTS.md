@@ -129,6 +129,8 @@ alone. Add a skill by adding a folder to `skills/` and rebuilding.
 | `modules/secrets.nix`, `secrets/` | Encrypted secrets (sops-nix) |
 | `modules/skills.nix`, `skills/` | Skills and instructions for agent CLIs |
 | `modules/laptop.nix` | Lid, sleep, thermals |
+| `modules/dashboard.nix`, `dashboard/` | The web dashboard and terminal, over Tailscale (`server.py`, `ui/`) |
+| `modules/screen.nix` | The status screen on the laptop's own display (`dashboard/ui/screen.*`) |
 | `installer/` | The USB installer: setup screen (`ui/`), its backend (`server.py`), and the install script |
 
 ## Facts about this machine

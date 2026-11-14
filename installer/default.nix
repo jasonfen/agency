@@ -63,6 +63,17 @@ let
     pkgs.tailscale
   ];
 
+  # For the optional "Sign in" step: the CLIs to sign in to, tmux to run
+  # each login in, and ttyd to show that login as a terminal on the page.
+  signinTools = [
+    pkgs.gh
+    pkgs.claude-code
+    pkgs.codex
+    pkgs.opencode
+    pkgs.tmux
+    pkgs.ttyd
+  ];
+
   agency-install = pkgs.writeShellApplication {
     name = "agency-install";
     runtimeInputs = tools;
@@ -141,6 +152,9 @@ in
 
       environment.systemPackages = [ agency-install ];
 
+      # Claude Code, offered on the "Sign in" step, is unfree.
+      nixpkgs.config.allowUnfreePredicate = pkg: lib.getName pkg == "claude-code";
+
       boot.kernelParams = [
         "quiet"
         "loglevel=3"
@@ -165,7 +179,7 @@ in
         description = "Backend for the setup screen";
         wantedBy = [ "multi-user.target" ];
         before = [ "cage-tty1.service" ];
-        path = tools ++ [ agency-install ];
+        path = tools ++ signinTools ++ [ agency-install ];
         environment = {
           HOME = "/root";
           AGENCY_UI = "${./ui}";

@@ -242,3 +242,41 @@ code, .code { font-family: var(--font-code); font-size: 0.95em; user-select: tex
 .lines div { display: grid; grid-template-columns: 11rem 1fr; }
 
 @media (prefers-reduced-motion: reduce) { .meter.is-busy i { animation: none; } }
+
+/* -------------------------------------------------------------- sign in */
+/* A list like .choices. A row opens in place while its login runs. */
+
+.accounts { display: grid; border: var(--edge); background: var(--surface); margin-top: var(--s2); }
+.account { padding: var(--s2) var(--s3); border-top: var(--hairline); }
+.account:first-child { border-top: 0; }
+.account-head { display: flex; align-items: center; justify-content: space-between; gap: var(--s2); min-height: 2.25rem; }
+.account .name { font-weight: 500; }
+.account .detail { color: var(--muted); font-size: var(--text-s); }
+.account-tick { width: 0.875rem; height: 0.75rem; fill: var(--accent); flex-shrink: 0; }
+.account-panel { margin-top: var(--s2); }
+.account-panel .scan { margin-top: 0; }
+.account-panel .scan.no-qr { grid-template-columns: 1fr; }
+.account-panel .qr { width: 10rem; height: 10rem; }
+.account-steps { display: grid; gap: var(--s1); align-content: start; min-width: 0; }
+.account-steps p + p { margin-top: 0; }
+.account-steps .keycode { font-size: var(--text-xl); line-height: 1.2; }
+.paste { display: flex; gap: var(--s1); margin-top: var(--s1); max-width: 26rem; }
+.paste .input { font-size: var(--text-m); padding: var(--s1) var(--s2); min-width: 0; }
+.paste .button { min-width: 0; }
+.account-links { display: flex; gap: var(--s3); margin-top: var(--s1); }
+.term { margin-top: var(--s2); border: var(--edge); background: #fff; height: 20rem; }
+.term iframe { display: block; width: 100%; height: 100%; border: 0; }
+
+.button--small { font-size: var(--text-s); padding: var(--s1) var(--s2); min-width: 6rem; }
+.link {
+  font: 400 var(--text-s) / 1.4 var(--font-body);
+  color: var(--muted);
+  background: none;
+  border: 0;
+  padding: 0;
+  text-decoration: underline;
+  text-underline-offset: 0.2em;
+  cursor: pointer;
+}
+.link:hover { color: var(--ink); }
+.account [hidden] { display: none; }

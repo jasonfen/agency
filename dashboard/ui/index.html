@@ -1,0 +1,109 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>agency</title>
+  <link rel="icon" href="data:,">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <svg width="0" height="0" aria-hidden="true" style="position:absolute">
+    <symbol id="pointer" viewBox="0 0 54 81">
+      <path class="pointer-tip" d="M0 0h9v9h-9z"/>
+      <path d="M0 9h18v9h-18zM0 18h27v9h-27zM0 27h36v9h-36zM0 36h45v9h-45zM0 45h54v9h-54zM0 54h36v9h-36zM0 63h9v9h-9zM27 63h18v9h-18zM36 72h18v9h-18z"/>
+    </symbol>
+  </svg>
+
+  <header class="bar">
+    <div class="brand">
+      <svg class="brand-mark" shape-rendering="crispEdges" aria-hidden="true"><use href="#pointer"/></svg>
+      <span class="brand-name" id="hostname">agency</span>
+      <span class="pill" id="pill"><span class="pill-mark"></span><span id="pill-text">Loading</span></span>
+    </div>
+    <span class="who" id="who"></span>
+  </header>
+
+  <div class="frame">
+    <nav class="nav" aria-label="Sections">
+      <a href="#overview" class="is-current">Overview</a>
+      <a href="#desktops">Desktops</a>
+      <a href="#terminal">Terminal</a>
+      <a href="#accounts">Accounts</a>
+      <a href="#apps">Apps</a>
+      <a href="#secrets">Secrets</a>
+      <a href="#system">System</a>
+    </nav>
+
+    <main class="main">
+      <section id="overview" aria-label="Overview" class="section">
+        <div id="notice" role="alert"></div>
+        <div id="job"></div>
+        <div id="updates" class="banner"></div>
+      </section>
+
+      <section id="desktops" class="section">
+        <div class="section-head">
+          <h2>Desktops</h2>
+          <button type="button" class="button" data-action="desktop-add" data-job>Add a desktop</button>
+        </div>
+        <div id="desktop-list" class="cards"></div>
+      </section>
+
+      <section id="terminal" class="section">
+        <div class="section-head">
+          <h2>Terminal</h2>
+          <a class="button" href="/terminal/" target="_blank" rel="noopener">Open in a new tab</a>
+        </div>
+        <div class="term">
+          <iframe id="term" title="Terminal" data-src="/terminal/"></iframe>
+        </div>
+        <p class="note" id="term-note">A shell on the machine, in your browser. Start an agent here, or attach to your tmux sessions.</p>
+      </section>
+
+      <div class="pair">
+        <section id="accounts" class="section">
+          <h2>Accounts</h2>
+          <div id="account-list" class="list"></div>
+        </section>
+
+        <section id="apps" class="section">
+          <h2>Apps</h2>
+          <div id="app-list" class="list"><p class="row muted">Loading the list of apps.</p></div>
+        </section>
+      </div>
+
+      <div class="pair">
+        <section id="secrets" class="section">
+          <h2>Secrets</h2>
+          <div class="box">
+            <div id="secret-list" class="chips"></div>
+            <form id="secret-form" class="secret-form" hidden autocomplete="off">
+              <label>Name <input class="input mono" name="name" placeholder="OPENAI_API_KEY" pattern="[A-Z_][A-Z0-9_]*" required spellcheck="false" autocapitalize="characters"></label>
+              <label>Value <input class="input mono" name="value" type="password" required autocomplete="new-password"></label>
+              <p class="note">Saved encrypted. Agents read it as an environment variable. It is not shown here again.</p>
+              <div class="buttons">
+                <button type="submit" class="button button--primary" data-job>Save</button>
+                <button type="button" class="button" data-action="secret-cancel">Cancel</button>
+              </div>
+            </form>
+          </div>
+        </section>
+
+        <section id="system" class="section">
+          <h2>System</h2>
+          <div class="box">
+            <dl id="system-facts" class="facts"></dl>
+            <div class="buttons">
+              <button type="button" class="button" data-action="update" data-job>Update</button>
+              <button type="button" class="button" data-action="rollback" data-job>Go back to the previous system</button>
+            </div>
+          </div>
+        </section>
+      </div>
+    </main>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>

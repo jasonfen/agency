@@ -13,6 +13,8 @@
     ../../modules/cli.nix # the `agency` command
     ../../modules/secrets.nix # encrypted secrets for agents
     ../../modules/skills.nix # what agent CLIs are told about this machine
+    ../../modules/dashboard.nix # the web dashboard and terminal, over Tailscale
+    ../../modules/screen.nix # the status screen on the laptop's own display
   ];
 
   # When empty, the name comes from /etc/hostname, which the installer
