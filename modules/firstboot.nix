@@ -49,7 +49,7 @@ in
       done
 
       if [ -e ${notes}/rebuild ]; then
-        nixos-rebuild switch --flake /etc/nixos#${settings.hostName}
+        nixos-rebuild switch --flake /etc/nixos#agency
         rm -f ${notes}/rebuild
       fi
 

@@ -20,11 +20,11 @@ If an agent breaks the system, reboot and pick yesterday's version from the boot
 ## Install
 
 1. Make sure your GitHub account has an SSH key on it, because that's how you'll log in.
-2. Download the ISO from **Actions → Build installer ISO** and flash it to a USB stick. In Rufus, pick DD mode.
+2. Download the ISO from the latest run under **Actions → Build installer ISO** and flash it to a USB stick. In Rufus, pick DD mode.
 3. In the BIOS, turn Secure Boot off and TPM on.
-4. Boot the stick. A setup screen walks you through the network, your GitHub username, which disk to erase, Tailscale, and which apps you want. Tailscale sign-in is a QR code you scan with your phone.
+4. Boot the stick. A setup screen walks you through the network, a name for the machine, your GitHub username, which disk to erase, Tailscale, and which apps you want. Tailscale sign-in is a QR code you scan with your phone.
 
-It installs, restarts, and you're in:
+It installs, restarts, and you're in, using the name you gave it:
 
 ```sh
 ssh agent@agency
@@ -38,10 +38,10 @@ Start one of the agents you picked and point it at [AGENTS.md](AGENTS.md), which
 
 ```sh
 gui chromium                                   # open an app on the agents' desktop
-sudo nixos-rebuild switch --flake /etc/nixos   # apply a change to the system
+sudo nixos-rebuild switch --flake /etc/nixos#agency   # apply a change to the system
 ```
 
-Their desktop lives at `http://agency:6081/vnc.html` once you're on Tailscale.
+Their desktop lives at `http://agency:6081/vnc.html` once you're on Tailscale (swap in your machine's name).
 
 ## Does it work
 

@@ -64,7 +64,7 @@ in
       RestartSec = 10;
     };
     script = ''
-      tailscale up --ssh --hostname ${settings.hostName} --auth-key "file:${authKeyFile}"
+      tailscale up --ssh --auth-key "file:${authKeyFile}"
       rm -f ${authKeyFile}
     '';
   };

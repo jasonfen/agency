@@ -1,10 +1,13 @@
 name: Build installer ISO
 
+# Builds the USB installer. It takes several minutes, so it does not run on
+# every push: start it from the Actions tab ("Run workflow"), or push a
+# version tag such as v0.1.0.
+
 on:
-  push:
-    branches: [main]
-    paths-ignore: ["**.md", "docs/**"]
   workflow_dispatch:
+  push:
+    tags: ["v*"]
 
 permissions:
   contents: write
@@ -15,15 +18,16 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # The hosted runner is short on disk and the ISO holds a whole system.
+      # Clearing space takes over a minute, so it runs alongside the build.
+      - name: Free disk space (in the background)
+        run: sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL &
+
       - uses: cachix/install-nix-action@v31
 
-      # The hosted runner is short on disk; the ISO holds a whole system.
-      - name: Free disk space
-        run: sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL
-
       # flake.lock pins the exact versions of everything. It is created here
-      # the first time and committed, so every later build is reproducible.
-      - name: Create flake.lock on first run
+      # if missing and committed, so every later build is reproducible.
+      - name: Create flake.lock if missing
         run: |
           if [ ! -f flake.lock ]; then
             nix flake lock

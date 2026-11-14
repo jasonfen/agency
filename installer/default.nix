@@ -21,7 +21,7 @@
   ...
 }:
 let
-  target = self.nixosConfigurations.${settings.hostName}.config;
+  target = self.nixosConfigurations.agency.config;
 
   # The app catalog as a plain table the installer can read.
   catalog = import ../apps.nix { inherit pkgs settings; };
@@ -104,7 +104,7 @@ let
   # The text wizard on the first console. Used for unattended sticks, and as
   # the fallback when the kiosk stops.
   textInstaller = {
-    description = "Install ${settings.hostName} (text)";
+    description = "agency installer (text)";
     after = [
       "NetworkManager.service"
       "systemd-user-sessions.service"
@@ -129,10 +129,14 @@ in
   config = lib.mkMerge [
     {
       nixpkgs.hostPlatform = "x86_64-linux";
-      image.baseName = lib.mkForce "${settings.hostName}-installer";
+      image.baseName = lib.mkForce "agency-installer";
 
       # Put the prebuilt system on the stick.
       isoImage.storeContents = [ target.system.build.toplevel ];
+
+      # A lighter compression level than the default (19). The ISO comes out
+      # a little larger and builds several times faster.
+      isoImage.squashfsCompression = "zstd -Xcompression-level 6";
 
       environment.systemPackages = [ agency-install ];
 

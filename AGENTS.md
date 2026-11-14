@@ -15,9 +15,12 @@ from the repo, which is published for others to reproduce.
 ```sh
 cd /etc/nixos
 # edit .nix files
-sudo nixos-rebuild switch --flake .    # apply now
-sudo nixos-rebuild test --flake .      # apply until next reboot (safe trial)
+sudo nixos-rebuild switch --flake .#agency    # apply now
+sudo nixos-rebuild test --flake .#agency      # apply until next reboot (safe trial)
 ```
+
+The configuration is always called `agency`, whatever this machine is named;
+its own name is `hostName` in `settings.nix`.
 
 Every rebuild is a new boot menu entry. If the machine does not come back
 after a change, a human picks the previous entry at boot. Before a risky
@@ -67,8 +70,8 @@ DISPLAY=:1 xdotool mousemove 640 400 click 1
 DISPLAY=:1 xdotool type 'hello'
 ```
 
-A human can watch or take over at `http://agency:6081/vnc.html` over
-Tailscale. When a site needs a login or 2FA, ask the human to do it there;
+A human can watch or take over at `http://<this machine's name>:6081/vnc.html`
+over Tailscale. When a site needs a login or 2FA, ask the human to do it there;
 the browser profile persists, so you stay signed in afterwards.
 
 ## Layout of the repo

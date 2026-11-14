@@ -12,6 +12,8 @@
     ../../modules/laptop.nix # run lid-closed, never sleep
   ];
 
+  # When empty, the name comes from /etc/hostname, which the installer
+  # writes with the name chosen during setup.
   networking.hostName = settings.hostName;
   time.timeZone = settings.timeZone;
   i18n.defaultLocale = "en_US.UTF-8";

@@ -14,7 +14,7 @@ Flash the ISO with balenaEtcher or `dd`. In Rufus, choose **DD Image mode** when
 The stick boots into a setup screen on the laptop's own display. It works with the keyboard alone (Tab, arrows, Space, Enter) or with a mouse. It asks five things:
 
 1. **Network.** If there is no connection it offers to join Wi-Fi.
-2. **Who can log in.** Your GitHub username.
+2. **Name and login.** A name for the machine, and your GitHub username.
 3. **Disk.** Pick the disk to erase from a list showing size and model.
 4. **Tailscale.** Optional. A QR code appears; scan it with your phone and approve the device. The sign-in is carried over to the installed system.
 5. **Apps.** Pick agents (Claude Code, Codex and others) and tools (browser, Docker and so on). The list comes from [`apps.nix`](../apps.nix).
@@ -40,6 +40,7 @@ journalctl -fu agency-firstboot
 Fork the repo and edit `settings.nix`:
 
 ```nix
+hostName = "lab";
 githubUser = "you";
 apps = [ "chromium" "docker" "claude-code" ];
 unattended = true;

@@ -1,0 +1,28 @@
+name: Check
+
+# Runs on every push. It is quick: it lints the installer and makes sure the
+# system and the installer still evaluate, without building anything.
+# Building the ISO is a separate workflow that runs only when asked.
+
+on:
+  push:
+    branches: [main]
+    paths-ignore: ["**.md", "docs/**"]
+  pull_request:
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Lint the installer
+        run: |
+          shellcheck -s bash installer/agency-install.sh
+          python3 -m py_compile installer/server.py
+          node --check installer/ui/app.js
+
+      - uses: cachix/install-nix-action@v31
+
+      - name: Evaluate the system and the installer
+        run: nix eval --raw .#packages.x86_64-linux.iso.drvPath

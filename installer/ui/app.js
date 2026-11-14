@@ -6,7 +6,7 @@
 
 const STEPS = [
   ["network", "Network"],
-  ["access", "Who can log in"],
+  ["access", "Name and login"],
   ["disk", "Disk"],
   ["tailscale", "Tailscale"],
   ["apps", "Apps"],
@@ -19,6 +19,7 @@ const state = {
   online: null,
   wifi: null,
   wifiError: "",
+  name: "",
   user: "",
   keyCount: 0,
   accessError: "",
@@ -136,8 +137,13 @@ const screens = {
 
   access() {
     return {
-      html: `<h1>Who can log in</h1>
-        <p class="lede">You log in over SSH with the keys already on your GitHub account, so there is no password to set.</p>
+      html: `<h1>Name and login</h1>
+        <p class="lede">Give this computer a name. You log in over SSH with the keys already on your GitHub account, so there is no password to set.</p>
+        <div class="field">
+          <label for="machine-name">Name of this computer</label>
+          <input class="input" id="machine-name" value="${esc(state.name)}" autocomplete="off" autocapitalize="off" spellcheck="false">
+          <span class="small muted">You will reach it as <code>${esc(state.info.user)}@name</code>.</span>
+        </div>
         <div class="field">
           <label for="gh-user">GitHub username</label>
           <input class="input" id="gh-user" value="${esc(state.user)}" autocomplete="off" autocapitalize="off" spellcheck="false">
@@ -148,10 +154,12 @@ const screens = {
         {
           label: state.busy ? "Checking" : "Continue", primary: true, disabled: state.busy,
           async run() {
+            state.name = $("#machine-name").value.trim().toLowerCase();
             state.user = $("#gh-user").value.trim();
             state.busy = true;
             redraw();
-            const res = await api("keys", { user: state.user });
+            let res = await api("name", { name: state.name });
+            if (res.ok) res = await api("keys", { user: state.user });
             state.busy = false;
             state.accessError = res.ok ? "" : res.error;
             state.keyCount = res.count || 0;
@@ -159,7 +167,7 @@ const screens = {
           },
         },
       ],
-      focus: "#gh-user",
+      focus: "#machine-name",
     };
   },
 
@@ -203,7 +211,7 @@ const screens = {
       <p class="lede">Tailscale lets you reach this computer from anywhere. It is the only way in from outside your network.</p>`;
     if (ts.state === "connected") {
       return {
-        html: `${intro}<div class="notice notice--good"><strong>Connected.</strong> This computer will appear on your tailnet as <code>${esc(state.info.hostname)}</code>.</div>`,
+        html: `${intro}<div class="notice notice--good"><strong>Connected.</strong> This computer will appear on your tailnet as <code>${esc(state.name)}</code>.</div>`,
         actions: [
           { label: "Back", run: () => show("disk") },
           { label: "Continue", primary: true, run: () => show("apps") },
@@ -236,7 +244,7 @@ const screens = {
       actions: [
         { label: "Back", run: () => show("disk") },
         { label: "Skip for now", quiet: true, run: () => show("apps") },
-        { label: "Connect Tailscale", primary: true, async run() { state.tailscale = await api("tailscale/start", {}); show("tailscale"); } },
+        { label: "Connect Tailscale", primary: true, async run() { state.tailscale = await api("tailscale/start", { name: state.name }); show("tailscale"); } },
       ],
     };
   },
@@ -276,6 +284,7 @@ const screens = {
       html: `<h1>Review</h1>
         <p class="lede">Check these, then install.</p>
         <dl class="summary">
+          <dt>Name</dt><dd>${esc(state.name)}</dd>
           <dt>Log in with</dt><dd>${state.keyCount} SSH key${state.keyCount === 1 ? "" : "s"} from github.com/${esc(state.user)}</dd>
           <dt>Disk</dt><dd>${esc(disk.model)}, ${esc(disk.size)} <span class="muted code">${esc(disk.path)}</span></dd>
           <dt>Tailscale</dt><dd>${state.tailscale.state === "connected" ? "Connected" : "Not set up"}</dd>
@@ -287,7 +296,7 @@ const screens = {
         {
           label: "Erase disk and install", danger: true,
           async run() {
-            await api("install", { disk: state.disk, user: state.user, apps: [...state.apps] });
+            await api("install", { name: state.name, disk: state.disk, user: state.user, apps: [...state.apps] });
             show("installing");
           },
         },
@@ -332,7 +341,8 @@ const screens = {
   },
 
   done() {
-    const { hostname, user } = state.info;
+    const { user } = state.info;
+    const hostname = state.name;
     const ts = state.tailscale.state === "connected";
     const st = state.install;
     const groups = (st.recoveryKey || "").split("-");
@@ -447,6 +457,7 @@ document.addEventListener("keydown", (e) => {
 
 (async () => {
   state.info = await api("info");
+  state.name = state.info.hostname;
   state.user = state.info.githubUser;
   state.apps = new Set(state.info.apps.filter((a) => a.on).map((a) => a.id));
   show("welcome");

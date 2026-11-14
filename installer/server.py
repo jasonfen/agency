@@ -23,7 +23,7 @@ from pathlib import Path
 
 PORT = 7373
 UI = Path(os.environ["AGENCY_UI"])
-HOSTNAME = os.environ.get("AGENCY_HOSTNAME", "agency")
+HOSTNAME = os.environ.get("AGENCY_HOSTNAME") or "agency"
 USER = os.environ.get("AGENCY_USER", "agent")
 GITHUB_USER = os.environ.get("AGENCY_GITHUB_USER", "")
 APPS_TABLE = Path(os.environ["AGENCY_APPS"])
@@ -37,6 +37,7 @@ MNT = Path(os.environ.get("AGENCY_MNT", "/mnt"))
 
 KEY_LINE = re.compile(r"^(ssh-|ecdsa-|sk-)", re.M)
 USERNAME = re.compile(r"^[A-Za-z0-9-]{1,39}$")
+MACHINE_NAME = re.compile(r"^[a-z0-9]([a-z0-9-]{0,30}[a-z0-9])?$")
 
 
 def sh(*cmd, timeout=30):
@@ -168,12 +169,12 @@ class Tailscale:
         f = self.dir / "tailscaled.state"
         return str(f) if self.state["state"] == "connected" and f.exists() else ""
 
-    def start(self):
+    def start(self, name):
         with self.lock:
             if self.state["state"] in ("starting", "waiting", "connected"):
                 return
             self.state = {"state": "starting", "url": "", "qr": "", "error": ""}
-        threading.Thread(target=self._run, daemon=True).start()
+        threading.Thread(target=self._run, args=(name,), daemon=True).start()
 
     def cancel(self):
         for p in self.procs:
@@ -182,7 +183,7 @@ class Tailscale:
             if self.state["state"] != "connected":
                 self.state = {"state": "idle", "url": "", "qr": "", "error": ""}
 
-    def _run(self):
+    def _run(self, name):
         self.dir.mkdir(parents=True, exist_ok=True)
         sock = f"--socket={self.dir}/sock"
         log = open(self.dir / "log", "w")
@@ -191,7 +192,7 @@ class Tailscale:
             stdout=log, stderr=subprocess.STDOUT)
         time.sleep(2)
         up = subprocess.Popen(
-            ["tailscale", sock, "up", "--ssh", f"--hostname={HOSTNAME}", "--timeout=15m"],
+            ["tailscale", sock, "up", "--ssh", f"--hostname={name}", "--timeout=15m"],
             stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
         self.procs = [up, daemon]
         for line in up.stdout:
@@ -237,14 +238,14 @@ class Install:
             ok, out, _ = sh("nix-store", "-qR", SYSTEM, timeout=120)
             self.total_paths = len(out.split()) if ok else 0
 
-    def start(self, disk, user, apps, tailscale_state):
+    def start(self, name, disk, user, apps, tailscale_state):
         with self.lock:
             if self.state["state"] == "running":
                 return
             self.reset()
             self.state["state"] = "running"
         cmd = [INSTALLER, "--unattended", "--force", "--yes", "--no-reboot",
-               "--github-user", user, "--disk", disk, "--apps", " ".join(apps)]
+               "--hostname", name, "--github-user", user, "--disk", disk, "--apps", " ".join(apps)]
         if tailscale_state:
             cmd += ["--tailscale-state", tailscale_state]
         threading.Thread(target=self._run, args=(cmd,), daemon=True).start()
@@ -342,8 +343,13 @@ class Handler(BaseHTTPRequestHandler):
             return self.send_json(wifi_connect(data.get("ssid", ""), data.get("password", "")))
         if path == "/api/keys":
             return self.send_json(ssh_keys(data.get("user", "")))
+        if path == "/api/name":
+            ok = bool(MACHINE_NAME.match(data.get("name", "")))
+            return self.send_json({"ok": ok, "error": "" if ok else "A name can use lowercase letters, numbers and hyphens, with no spaces. For example: agency or lab-2."})
         if path == "/api/tailscale/start":
-            tailscale.start()
+            if not MACHINE_NAME.match(data.get("name", "")):
+                return self.send_json({"error": "bad request"}, 400)
+            tailscale.start(data["name"])
             return self.send_json(tailscale.state)
         if path == "/api/tailscale/cancel":
             tailscale.cancel()
@@ -352,9 +358,10 @@ class Handler(BaseHTTPRequestHandler):
             known = {a["id"] for a in info()["apps"]}
             apps = [a for a in data.get("apps", []) if a in known]
             valid_disks = {d["path"] for d in disks()["disks"]}
-            if data.get("disk") not in valid_disks or not USERNAME.match(data.get("user", "")):
+            if (data.get("disk") not in valid_disks or not USERNAME.match(data.get("user", ""))
+                    or not MACHINE_NAME.match(data.get("name", ""))):
                 return self.send_json({"error": "bad request"}, 400)
-            install.start(data["disk"], data["user"], apps, tailscale.state_file())
+            install.start(data["name"], data["disk"], data["user"], apps, tailscale.state_file())
             return self.send_json({"ok": True})
         if path == "/api/restart":
             subprocess.Popen(["systemctl", "reboot"])

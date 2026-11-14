@@ -18,8 +18,9 @@
       specialArgs = { inherit self settings; };
     in
     {
-      # The machine itself.
-      nixosConfigurations.${settings.hostName} = nixpkgs.lib.nixosSystem {
+      # The machine itself. The configuration is always called "agency";
+      # the machine's own name is hostName in settings.nix.
+      nixosConfigurations.agency = nixpkgs.lib.nixosSystem {
         inherit system specialArgs;
         modules = [
           disko.nixosModules.disko
@@ -35,7 +36,7 @@
 
       packages.${system} = {
         iso = self.nixosConfigurations.installer.config.system.build.isoImage;
-        system = self.nixosConfigurations.${settings.hostName}.config.system.build.toplevel;
+        system = self.nixosConfigurations.agency.config.system.build.toplevel;
         default = self.packages.${system}.iso;
       };
     };

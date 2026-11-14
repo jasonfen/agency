@@ -1,12 +1,12 @@
 # Every value that differs from one machine to the next lives in this file.
 #
-# The installer's setup wizard asks for most of these and rewrites the
-# `githubUser` and `apps` lines on the installed machine, so keep each of
-# those two on a single line.
+# The installer's setup screen asks for most of these and rewrites the
+# `hostName`, `githubUser` and `apps` lines on the installed machine, so
+# keep each of those three on a single line.
 {
-  # Network name of the machine. It is reachable as <hostName>.local on the
-  # LAN and as <hostName> on your tailnet.
-  hostName = "agency";
+  # Name of the machine. It is reachable as <hostName>.local on the LAN and
+  # as <hostName> on your tailnet. Empty: setup asks for one.
+  hostName = "";
 
   # The account agents (and you) log in as. It has passwordless sudo.
   user = "agent";

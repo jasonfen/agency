@@ -12,6 +12,7 @@
 #
 # Options:
 #   --unattended            no questions
+#   --hostname NAME         what to call the machine
 #   --github-user NAME      whose SSH keys to install
 #   --disk /dev/NAME        which disk to erase
 #   --apps "ID ID ..."      which apps from apps.nix to install
@@ -35,6 +36,7 @@ unattended=$AGENCY_UNATTENDED
 force=0
 disk=$AGENCY_DISK
 gh_user=$AGENCY_GITHUB_USER
+host=$AGENCY_HOSTNAME
 apps_arg=""
 apps_given=0
 ts_state=""
@@ -51,6 +53,10 @@ while [ $# -gt 0 ]; do
       ;;
     --github-user)
       gh_user=${2:-}
+      shift
+      ;;
+    --hostname)
+      host=${2:-}
       shift
       ;;
     --apps)
@@ -232,8 +238,11 @@ fetch_keys() {
 }
 
 valid_user() { [[ "$1" =~ ^[A-Za-z0-9-]{1,39}$ ]]; }
+valid_host() { [[ "$1" =~ ^[a-z0-9]([a-z0-9-]{0,30}[a-z0-9])?$ ]]; }
+host=${host:-agency}
 
 if [ "$unattended" = 1 ]; then
+  valid_host "$host" || stop "'$host' is not a valid machine name. Use lowercase letters, numbers and hyphens."
   if [ -n "$gh_user" ]; then
     valid_user "$gh_user" || stop "'$gh_user' is not a valid GitHub username."
     fetch_keys "$gh_user" || true
@@ -242,7 +251,16 @@ if [ "$unattended" = 1 ]; then
     stop "no SSH public key available. Add one to the GitHub account, pass --github-user NAME, or set 'sshKeys' in settings.nix."
 else
   while true; do
-    screen "2 of 5   who can log in"
+    screen "2 of 5   name and login"
+    note "Give this computer a name. Use lowercase letters, numbers and hyphens."
+    printf '\n'
+    host=$(gum input --no-show-help --header "Name of this computer" --value "$host")
+    if valid_host "$host"; then break; fi
+    note "That name won't work."
+    pause "Press Enter to try again."
+  done
+  while true; do
+    screen "2 of 5   name and login"
     note "You log in over SSH with the keys already on your GitHub account, so there is no password to set."
     printf '\n'
     gh_user=$(gum input --no-show-help --header "GitHub username" --placeholder "your-username" --value "$gh_user")
@@ -352,7 +370,7 @@ if [ "$unattended" = 0 ]; then
     sleep 3
     printf '\n'
     note "Scan the code, sign in, and approve the device. This screen continues by itself."
-    if tailscale --socket="$ts_dir/sock" up --qr --ssh --hostname="$AGENCY_HOSTNAME" --timeout=10m; then
+    if tailscale --socket="$ts_dir/sock" up --qr --ssh --hostname="$host" --timeout=10m; then
       ts_state=$ts_dir/tailscaled.state
     else
       note "Tailscale was not connected. You can do it after the install with: sudo tailscale up --ssh"
@@ -441,9 +459,10 @@ if [ "$unattended" = 1 ]; then
   fi
 else
   screen "ready"
+  printf 'Name          %s\n' "$host"
   printf 'Log in with   SSH keys of github.com/%s\n' "$gh_user"
   if [ "$ts_ok" = 1 ]; then
-    printf 'Tailscale     connected as %s\n' "$AGENCY_HOSTNAME"
+    printf 'Tailscale     connected\n'
   else
     printf 'Tailscale     not set up\n'
   fi
@@ -506,6 +525,7 @@ chmod -R u+w /mnt/etc/nixos
 apps_nix=""
 for id in "${chosen[@]}"; do apps_nix+="\"$id\" "; done
 sed -i -E \
+  -e "s|^  hostName = .*|  hostName = \"$host\";|" \
   -e "s|^  githubUser = .*|  githubUser = \"$gh_user\";|" \
   -e "s|^  apps = .*|  apps = [ $apps_nix];|" \
   /mnt/etc/nixos/settings.nix
@@ -514,6 +534,14 @@ sed -i -E \
 notes=/mnt/var/lib/agency/firstboot
 install -d -m 700 /mnt/var/lib/agency "$notes"
 if [ "$system_list" != "$AGENCY_BAKED_SYSTEM" ]; then touch "$notes/rebuild"; fi
+
+# The machine's name. A prebuilt system with no name of its own reads it
+# from /etc/hostname; one with a different name baked in has to rebuild.
+if [ -z "$AGENCY_HOSTNAME" ]; then
+  printf '%s\n' "$host" >/mnt/etc/hostname
+elif [ "$host" != "$AGENCY_HOSTNAME" ]; then
+  touch "$notes/rebuild"
+fi
 if [ "${#chosen_npm[@]}" -gt 0 ]; then printf '%s\n' "${chosen_npm[@]}" >"$notes/npm-packages"; fi
 
 # Carry the Tailscale sign-in and any Wi-Fi network over to the new system.
@@ -554,9 +582,9 @@ if [ "$unattended" = 1 ]; then
   sleep 20
 else
   screen "done"
-  printf 'On the same network    ssh %s@%s.local\n' "$AGENCY_USER" "$AGENCY_HOSTNAME"
+  printf 'On the same network    ssh %s@%s.local\n' "$AGENCY_USER" "$host"
   if [ "$ts_ok" = 1 ]; then
-    printf 'From anywhere          ssh %s@%s\n' "$AGENCY_USER" "$AGENCY_HOSTNAME"
+    printf 'From anywhere          ssh %s@%s\n' "$AGENCY_USER" "$host"
   fi
   printf '\n'
   note "The apps you chose finish installing in the background after the first start. That can take ten minutes."
