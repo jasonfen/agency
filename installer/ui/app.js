@@ -67,9 +67,9 @@ const screens = {
       };
     }
     return {
-      html: `<h1>Set up a computer for your agents</h1>
-        <p class="lede">This erases one disk, installs the system, and restarts. It takes about ten minutes.</p>
-        <p>You'll choose a network, who can log in, a disk and some apps. Nothing is changed until you confirm on the last screen.</p>
+      html: `<h1>A computer for your agents</h1>
+        <p class="lede">agency turns this computer into one that AI agents run. They get full control of it and a desktop of their own, and you check in from your laptop or phone.</p>
+        <p>Setup takes about ten minutes. Installing erases one disk. You choose which, and nothing is changed until you confirm on the last screen.</p>
         ${icon("pointer", "hero")}`,
       actions: [{ label: "Begin", primary: true, run: () => show("network") }],
     };
@@ -137,7 +137,7 @@ const screens = {
   access() {
     return {
       html: `<h1>Who can log in</h1>
-        <p class="lede">There is no password. The computer accepts the SSH keys that are on a GitHub account.</p>
+        <p class="lede">You log in over SSH with the keys already on your GitHub account, so there is no password to set.</p>
         <div class="field">
           <label for="gh-user">GitHub username</label>
           <input class="input" id="gh-user" value="${esc(state.user)}" autocomplete="off" autocapitalize="off" spellcheck="false">
@@ -352,7 +352,7 @@ const screens = {
         <div class="scan" style="margin-top: var(--s1)">
           <div class="qr">${st.recoveryQr}</div>
           <div>
-            <p>This unlocks the disk if the security chip ever refuses to. Save it now. Scanning the code copies it to your phone.</p>
+            <p>The disk is encrypted. If this computer's hardware fails or its BIOS is updated, this key is the only way to get back in. Save it now. Scanning the code copies it to your phone.</p>
             <p class="keycode" style="margin-top: var(--s2)">${keyRows.map(esc).join("-<br>")}</p>
           </div>
         </div>` : ""}`,

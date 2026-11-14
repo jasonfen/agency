@@ -166,9 +166,9 @@ trap cleanup EXIT
 
 if [ "$unattended" = 0 ]; then
   screen "welcome"
-  note "This turns the computer into a machine for AI agents. It erases one disk, installs NixOS, and restarts."
+  note "agency turns this computer into one that AI agents run. They get full control of it and a desktop of their own, and you check in from your laptop or phone."
   printf '\n'
-  note "You will be asked five things first: network, who can log in, which disk, Tailscale, and which apps. Nothing is changed until you confirm at the end."
+  note "Setup takes about ten minutes. Installing erases one disk. You choose which, and nothing is changed until you confirm at the end."
   printf '\n'
   pause "Press Enter to begin."
 fi
@@ -243,7 +243,7 @@ if [ "$unattended" = 1 ]; then
 else
   while true; do
     screen "2 of 5   who can log in"
-    note "There is no password login. The machine accepts the SSH keys that are on a GitHub account, so type the account to use."
+    note "You log in over SSH with the keys already on your GitHub account, so there is no password to set."
     printf '\n'
     gh_user=$(gum input --no-show-help --header "GitHub username" --placeholder "your-username" --value "$gh_user")
     if ! valid_user "$gh_user"; then
@@ -561,7 +561,7 @@ else
   printf '\n'
   note "The apps you chose finish installing in the background after the first start. That can take ten minutes."
   printf '\n'
-  note "Disk recovery key. It unlocks the disk if the TPM ever refuses to. Save it now; scanning the code copies it to your phone."
+  note "Disk recovery key. The disk is encrypted. If this computer's hardware fails or its BIOS is updated, this key is the only way to get back in. Save it now; scanning the code copies it to your phone."
   printf '\n%s\n\n' "$recovery"
   qrencode -t UTF8 -m 2 "$recovery" || true
   printf '\n'
