@@ -1,0 +1,10 @@
+result
+result-*
+
+# Secrets never belong in this repo.
+*.key
+*.pem
+*authkey*
+.env
+.env.*
+secrets/
