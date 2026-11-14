@@ -7,7 +7,7 @@ name: Check
 on:
   push:
     branches: [main]
-    paths-ignore: ["**.md", "docs/**"]
+    paths-ignore: ["**.md", "docs/**", "site/**"]
   pull_request:
 
 jobs:

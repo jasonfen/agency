@@ -1,0 +1,127 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>agency: a computer for your agents</title>
+  <meta name="description" content="agency turns a spare laptop or PC into a computer that only AI agents use. They get full control of it and a desktop of their own, and you check in over SSH or from a browser tab.">
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='-13.5 0 81 81'%3E%3Cpath fill='%231f8a4c' d='M0 0h9v9h-9z'/%3E%3Cpath fill='%2315201a' d='M0 9h18v9h-18zM0 18h27v9h-27zM0 27h36v9h-36zM0 36h45v9h-45zM0 45h54v9h-54zM0 54h36v9h-36zM0 63h9v9h-9zM27 63h18v9h-18zM36 72h18v9h-18z'/%3E%3C/svg%3E">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <!-- The pixel shapes from the installer: the logo's pointer, and a tick
+       drawn on the same grid. -->
+  <svg width="0" height="0" aria-hidden="true" style="position:absolute">
+    <symbol id="pointer" viewBox="0 0 54 81">
+      <path class="pointer-tip" d="M0 0h9v9h-9z"/>
+      <path d="M0 9h18v9h-18zM0 18h27v9h-27zM0 27h36v9h-36zM0 36h45v9h-45zM0 45h54v9h-54zM0 54h36v9h-36zM0 63h9v9h-9zM27 63h18v9h-18zM36 72h18v9h-18z"/>
+    </symbol>
+    <symbol id="tick" viewBox="0 0 54 45">
+      <path d="M45 0h9v9h-9zM36 9h9v9h-9zM45 9h9v9h-9zM27 18h9v9h-9zM36 18h9v9h-9zM0 18h9v9h-9zM18 27h9v9h-9zM27 27h9v9h-9zM0 27h9v9h-9zM9 27h9v9h-9zM9 36h9v9h-9zM18 36h9v9h-9z"/>
+    </symbol>
+  </svg>
+
+  <header class="bar">
+    <div class="wrap">
+      <a class="brand" href="#top" aria-label="agency">
+        <svg class="brand-mark" aria-hidden="true"><use href="#pointer"/></svg>
+        <span class="brand-name">agency</span>
+      </a>
+      <a href="https://github.com/makors/agency">GitHub</a>
+    </div>
+  </header>
+
+  <main id="top">
+    <section class="opening">
+      <div class="wrap">
+        <div>
+          <h1>A computer for your agents</h1>
+          <p class="lede">Agents are bad at sharing a computer with you. They want the mouse, the screen and the browser at the same moment you do, and you can't really let them run with full permissions on your own machine. agency turns a spare laptop or PC into one that only they use, so they get full control of it and you check in over SSH or from a browser tab.</p>
+          <div class="opening-actions">
+            <a class="button button--primary" href="https://github.com/makors/agency">Get it on GitHub</a>
+            <a href="https://github.com/makors/agency/blob/HEAD/docs/install.md">Read the install guide</a>
+          </div>
+        </div>
+        <svg class="hero" aria-hidden="true"><use href="#pointer"/></svg>
+      </div>
+    </section>
+
+    <section class="shots" aria-label="Screenshots of the installer">
+      <div class="wrap">
+        <figure>
+          <a class="shot" href="img/setup-apps.png"><img src="img/setup-apps.png" width="960" height="600" alt="The installer's apps screen, with checkboxes for four agents and six tools."></a>
+          <div class="shot-row">
+            <a class="shot" href="img/setup-disk.png"><img src="img/setup-disk.png" width="960" height="600" loading="lazy" alt="The disk screen, listing two disks with one selected."></a>
+            <a class="shot" href="img/setup-tailscale.png"><img src="img/setup-tailscale.png" width="960" height="600" loading="lazy" alt="The Tailscale screen, showing a QR code to scan with a phone."></a>
+            <a class="shot" href="img/setup-installed.png"><img src="img/setup-installed.png" width="960" height="600" loading="lazy" alt="The last screen, showing the SSH command to log in and the disk recovery key."></a>
+          </div>
+          <figcaption class="caption">The setup screen you see when the machine boots from the USB stick. It asks five things and then installs.</figcaption>
+        </figure>
+      </div>
+    </section>
+
+    <section aria-labelledby="get">
+      <div class="wrap">
+        <h2 id="get">What you get</h2>
+        <p class="intro">A NixOS machine set up for agents to work on by themselves, with a few things in place for when one of them gets it wrong.</p>
+        <dl class="summary">
+          <dt>Full control</dt>
+          <dd>The agents share one account with passwordless sudo, so they can install and change anything on the machine.</dd>
+          <dt>A desktop of their own</dt>
+          <dd>A virtual desktop runs GUI apps and computer use. You can watch it or take over in a browser tab over Tailscale, which is how you type a password when a site asks for one.</dd>
+          <dt>Nobody sits at it</dt>
+          <dd>You reach it over SSH or Tailscale, and it keeps running with the lid closed.</dd>
+          <dt>A way back</dt>
+          <dd>Every change to the system becomes an entry in the boot menu. If an agent breaks something, you restart and pick an earlier one.</dd>
+          <dt>An encrypted disk</dt>
+          <dd>The TPM unlocks the disk at boot, so the machine starts without anyone there to type a passphrase.</dd>
+          <dt>The apps you pick</dt>
+          <dd>Claude Code, Codex CLI, OpenCode and T3 Code for agents, and Chromium, Firefox, Docker, Flatpak, Rust and Go for tools. Anything else can be added later.</dd>
+        </dl>
+      </div>
+    </section>
+
+    <section aria-labelledby="install">
+      <div class="wrap">
+        <h2 id="install">How to install it</h2>
+        <p class="intro">Setup takes about ten minutes and erases one disk. You choose which, and nothing is changed until you confirm on the last screen.</p>
+        <ol class="steps">
+          <li><span>Make sure your GitHub account has an SSH key on it, because that's how you'll log in.</span></li>
+          <li><span>Download the ISO from the latest <a href="https://github.com/makors/agency/actions/workflows/iso.yml">Build installer ISO</a> run in the repo, and flash it to a USB stick.</span></li>
+          <li><span>In the BIOS of the spare machine, turn Secure Boot off and the TPM on.</span></li>
+          <li><span>Boot from the stick. The setup screen asks for the network, a name for the machine, your GitHub username, which disk to erase, a Tailscale sign-in (a QR code you scan with your phone) and which apps you want.</span></li>
+        </ol>
+        <p class="after">It installs, restarts, and you log in from your own computer, using the name you gave it:</p>
+        <code class="command">ssh agent@agency</code>
+      </div>
+    </section>
+
+    <section aria-label="Requirements and status">
+      <div class="wrap two">
+        <div>
+          <h2>What it needs</h2>
+          <ul class="needs">
+            <li><svg aria-hidden="true"><use href="#tick"/></svg><span>An x86-64 laptop or PC you can wipe</span></li>
+            <li><svg aria-hidden="true"><use href="#tick"/></svg><span>UEFI firmware</span></li>
+            <li><svg aria-hidden="true"><use href="#tick"/></svg><span>A TPM 2.0 chip</span></li>
+            <li><svg aria-hidden="true"><use href="#tick"/></svg><span>Secure Boot turned off</span></li>
+            <li><svg aria-hidden="true"><use href="#tick"/></svg><span>A USB stick, and a GitHub account with an SSH key</span></li>
+            <li><svg aria-hidden="true"><use href="#tick"/></svg><span>Internet during setup, by cable or Wi-Fi</span></li>
+          </ul>
+        </div>
+        <div class="notice">
+          <h2>Does it work?</h2>
+          <p>Not reliably yet. agency is new and has had very little testing on real machines, so expect the first install to trip on something. There is no one-click download yet either. The ISO comes from the Actions builds in the <a href="https://github.com/makors/agency">GitHub repo</a>, which is also the place to report what broke.</p>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <footer class="foot">
+    <div class="wrap">
+      <p><a href="https://github.com/makors/agency">github.com/makors/agency</a></p>
+      <p>Set in Pixelify Sans and IBM Plex, both under the SIL Open Font License.</p>
+    </div>
+  </footer>
+</body>
+</html>

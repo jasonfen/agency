@@ -1,0 +1,191 @@
+/* agency site. Tokens are the installer's (installer/ui/style.css), so the
+   page and the setup screen read as one product: a pixel grid, square
+   corners, hard edges, and one unit (--u) that all spacing is a multiple of. */
+
+@font-face { font-family: "Pixelify Sans"; font-weight: 500; font-display: swap; src: url(fonts/pixelify-sans-latin-500-normal.woff2) format("woff2"); }
+@font-face { font-family: "Pixelify Sans"; font-weight: 700; font-display: swap; src: url(fonts/pixelify-sans-latin-700-normal.woff2) format("woff2"); }
+@font-face { font-family: "IBM Plex Sans"; font-weight: 400; font-display: swap; src: url(fonts/ibm-plex-sans-latin-400-normal.woff2) format("woff2"); }
+@font-face { font-family: "IBM Plex Sans"; font-weight: 500; font-display: swap; src: url(fonts/ibm-plex-sans-latin-500-normal.woff2) format("woff2"); }
+@font-face { font-family: "IBM Plex Sans"; font-weight: 600; font-display: swap; src: url(fonts/ibm-plex-sans-latin-600-normal.woff2) format("woff2"); }
+@font-face { font-family: "IBM Plex Mono"; font-weight: 400; font-display: swap; src: url(fonts/ibm-plex-mono-latin-400-normal.woff2) format("woff2"); }
+@font-face { font-family: "IBM Plex Mono"; font-weight: 500; font-display: swap; src: url(fonts/ibm-plex-mono-latin-500-normal.woff2) format("woff2"); }
+
+:root {
+  /* Color */
+  --canvas: #eef1ec;
+  --surface: #ffffff;
+  --ink: #15201a;
+  --muted: #56655c;
+  --line: #c6d0c8;
+  --accent: #1f8a4c;
+  --accent-strong: #136637;
+  --accent-soft: #dcefe2;
+
+  /* Type */
+  --font-display: "Pixelify Sans", sans-serif;
+  --font-body: "IBM Plex Sans", system-ui, sans-serif;
+  --font-code: "IBM Plex Mono", ui-monospace, monospace;
+  --text-s: 0.875rem;
+  --text-m: 1rem;
+  --text-l: 1.25rem;
+  --text-xl: 2.5rem;
+
+  /* Space: multiples of one unit */
+  --u: 0.25rem;
+  --s1: calc(var(--u) * 2);
+  --s2: calc(var(--u) * 4);
+  --s3: calc(var(--u) * 6);
+  --s4: calc(var(--u) * 10);
+  --s5: calc(var(--u) * 16);
+
+  --edge: calc(var(--u) / 2) solid var(--ink);
+  --hairline: 1px solid var(--line);
+
+  --page: 62rem;
+  --gutter: var(--s4);
+}
+
+html { font-size: clamp(16px, 0.35vw + 13px, 19px); -webkit-text-size-adjust: 100%; }
+
+* { box-sizing: border-box; margin: 0; }
+
+body {
+  background: var(--canvas);
+  color: var(--ink);
+  font: 400 var(--text-m) / 1.55 var(--font-body);
+}
+
+.wrap { max-width: var(--page); margin: 0 auto; padding: 0 var(--gutter); }
+
+/* ---------------------------------------------------------------- frame */
+
+.bar { border-bottom: var(--edge); background: var(--surface); }
+.bar .wrap { display: flex; align-items: center; justify-content: space-between; padding-top: var(--s2); padding-bottom: var(--s2); }
+.brand { display: flex; align-items: center; gap: var(--s2); color: var(--ink); text-decoration: none; }
+.brand-mark { width: 1.25rem; height: 1.875rem; fill: var(--ink); }
+.pointer-tip { fill: var(--accent); }
+.brand-name { font: 500 1.75rem / 1 var(--font-display); }
+
+section { padding: var(--s5) 0; border-top: var(--hairline); }
+section.opening { border-top: 0; }
+
+.foot { border-top: var(--edge); background: var(--surface); color: var(--muted); font-size: var(--text-s); }
+.foot p { margin: 0; }
+.foot .wrap { display: flex; flex-wrap: wrap; gap: var(--s1) var(--s4); justify-content: space-between; padding-top: var(--s3); padding-bottom: var(--s3); }
+
+/* ----------------------------------------------------------------- type */
+
+h1 { font: 700 var(--text-xl) / 1.1 var(--font-display); margin-bottom: var(--s3); }
+h2 { font: 700 1.75rem / 1.15 var(--font-display); margin-bottom: var(--s2); }
+.lede { font-size: var(--text-l); line-height: 1.5; color: var(--muted); max-width: 36rem; }
+.intro { color: var(--muted); max-width: 36rem; margin-bottom: var(--s3); }
+p + p { margin-top: var(--s2); }
+.muted { color: var(--muted); }
+.small { font-size: var(--text-s); }
+code { font-family: var(--font-code); font-size: 0.95em; }
+
+a { color: var(--ink); text-decoration: underline; text-underline-offset: 0.2em; text-decoration-thickness: 1px; }
+a:hover { color: var(--accent-strong); }
+
+:focus-visible { outline: calc(var(--u) * 0.75) solid var(--accent); outline-offset: var(--u); }
+
+/* -------------------------------------------------------------- buttons */
+
+.button {
+  display: inline-block;
+  font: 500 var(--text-m) / 1 var(--font-body);
+  color: var(--ink);
+  background: var(--surface);
+  border: var(--edge);
+  padding: var(--s2) var(--s3);
+  text-align: center;
+  text-decoration: none;
+}
+.button:hover { background: var(--canvas); color: var(--ink); }
+.button:active { transform: translate(var(--u), var(--u)); box-shadow: none; }
+
+/* The one loud thing on the page: a block with a hard pixel shadow. */
+.button--primary { background: var(--accent); color: #fff; box-shadow: var(--u) var(--u) 0 var(--ink); }
+.button--primary:hover { background: var(--accent-strong); color: #fff; }
+
+/* -------------------------------------------------------------- opening */
+
+.opening .wrap { display: grid; grid-template-columns: 1fr auto; gap: var(--s5); align-items: center; }
+.opening-actions { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s3); margin-top: var(--s4); }
+.hero { display: block; width: 8rem; height: 12rem; fill: var(--ink); margin-right: var(--s4); }
+
+/* ---------------------------------------------------------- screenshots */
+
+.shots { padding-top: 0; border-top: 0; }
+.shot { display: block; border: var(--edge); background: var(--surface); }
+.shot img { display: block; width: 100%; height: auto; }
+.shot-row { display: grid; grid-template-columns: repeat(3, 1fr); gap: var(--s3); margin-top: var(--s3); }
+.caption { color: var(--muted); font-size: var(--text-s); margin-top: var(--s2); }
+
+/* ------------------------------------------------- lists on white panels */
+/* The installer's summary table and its rows of choices, reused. */
+
+.summary { display: grid; grid-template-columns: 13rem 1fr; border: var(--edge); background: var(--surface); }
+.summary dt, .summary dd { padding: var(--s2) var(--s3); border-top: var(--hairline); }
+.summary dt:first-of-type, .summary dt:first-of-type + dd { border-top: 0; }
+.summary dt { font-weight: 600; }
+.summary dd { color: var(--muted); }
+
+.steps { list-style: none; padding: 0; border: var(--edge); background: var(--surface); counter-reset: step; }
+.steps li {
+  counter-increment: step;
+  display: grid;
+  grid-template-columns: 2rem 1fr;
+  gap: var(--s2);
+  padding: var(--s2) var(--s3);
+  border-top: var(--hairline);
+}
+.steps li:first-child { border-top: 0; }
+.steps li::before { content: counter(step); font: 500 var(--text-m) / 1.55 var(--font-code); color: var(--accent-strong); }
+
+.after { margin-top: var(--s3); }
+.command {
+  display: block;
+  margin-top: var(--s2);
+  padding: var(--s2) var(--s3);
+  border: var(--edge);
+  background: var(--surface);
+  font: 500 var(--text-l) / 1.4 var(--font-code);
+  overflow-x: auto;
+  white-space: nowrap;
+}
+
+/* -------------------------------------------------------------- notices */
+
+.two { display: grid; grid-template-columns: 1fr 1fr; gap: var(--s4); align-items: start; }
+.needs { list-style: none; padding: 0; display: grid; gap: var(--s1); }
+.needs li { display: grid; grid-template-columns: 1.5rem 1fr; gap: var(--s1); align-items: baseline; }
+.needs svg { width: 0.875rem; height: 0.75rem; fill: var(--accent); justify-self: center; }
+.notice { border: var(--edge); padding: var(--s3); background: var(--surface); }
+.notice h2 { font: 600 var(--text-m) / 1.4 var(--font-body); margin-bottom: var(--s1); }
+
+/* ---------------------------------------------------------------- small */
+
+@media (max-width: 52rem) {
+  :root { --gutter: var(--s3); --text-xl: 2.125rem; }
+  section { padding: var(--s4) 0; }
+  .opening .wrap { grid-template-columns: 1fr; gap: var(--s3); }
+  .hero { display: none; }
+  /* One screenshot is enough on a phone; the rest only make the page long. */
+  .shot-row { display: none; }
+  .summary { grid-template-columns: 1fr; }
+  .summary dd { border-top: 0; padding-top: 0; }
+  .summary dt { padding-bottom: var(--u); }
+  .two { grid-template-columns: 1fr; gap: var(--s4); }
+}
+
+@media (max-width: 26rem) {
+  :root { --gutter: var(--s2); --text-l: 1.125rem; }
+  .brand-name { font-size: 1.5rem; }
+  .opening-actions .button--primary { width: 100%; }
+  .steps li, .summary dt, .summary dd { padding-left: var(--s2); padding-right: var(--s2); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .button:active { transform: none; }
+}
