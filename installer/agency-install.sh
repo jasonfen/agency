@@ -12,8 +12,25 @@
 #   AGENCY_SYSTEM       the prebuilt system to install
 #   AGENCY_SOURCE       this repo, copied to /etc/nixos on the new system
 
+# Options (for a human at the installer's shell, Alt+F2):
+#   --force        skip the vendor and already-installed checks
+#   --disk /dev/X  install to this disk
 force=0
-if [ "${1:-}" = "--force" ]; then force=1; fi
+disk=$AGENCY_DISK
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --force) force=1 ;;
+    --disk)
+      disk=${2:-}
+      shift
+      ;;
+    *)
+      echo "usage: agency-install [--force] [--disk /dev/NAME]"
+      exit 2
+      ;;
+  esac
+  shift
+done
 
 luks_part=/dev/disk/by-partlabel/disk-main-luks
 luks_key=/tmp/agency-luks.key
@@ -39,19 +56,28 @@ if [ -n "$boot_part" ]; then
   boot_disk=$(lsblk -no PKNAME "$boot_part" 2>/dev/null | head -n1 || true)
 fi
 
-# Largest internal disk: not removable, not USB, not the boot stick.
-pick_disk() {
+# Internal disks: not removable, not USB, not the boot stick.
+internal_disks() {
   lsblk -dnbo NAME,SIZE,TYPE,RM,TRAN |
     awk -v skip="$boot_disk" \
-      '$3 == "disk" && $4 == 0 && $5 != "usb" && $1 != skip && $1 !~ /^(zram|loop|ram)/ { print $2, $1 }' |
-    sort -rn | awk 'NR == 1 { print "/dev/" $2 }'
+      '$3 == "disk" && $4 == 0 && $5 != "usb" && $1 != skip && $1 !~ /^(zram|loop|ram)/ { print "/dev/" $1 }'
 }
 
-disk=$AGENCY_DISK
-if [ -z "$disk" ]; then disk=$(pick_disk); fi
-if [ -z "$disk" ] || [ ! -b "$disk" ]; then
-  stop "no internal disk found (looked for '${disk:-any}'). Run lsblk, then set 'disk' in settings.nix."
+# With no disk named, only proceed if there is exactly one candidate.
+# Never guess between several: the wrong guess erases someone's data.
+if [ -z "$disk" ]; then
+  mapfile -t candidates < <(internal_disks)
+  if [ "${#candidates[@]}" -gt 1 ]; then
+    say "This machine has more than one internal disk:"
+    lsblk -do NAME,SIZE,MODEL,TRAN "${candidates[@]}"
+    stop "choose one. Either run: sudo agency-install --disk /dev/NAME   or set 'disk' in settings.nix and rebuild the stick."
+  fi
+  disk=${candidates[0]:-}
 fi
+if [ -z "$disk" ] || [ ! -b "$disk" ]; then
+  stop "no usable internal disk found (looked for '${disk:-any}'). Run lsblk to see what is there."
+fi
+disk=$(readlink -f "$disk")
 [ "$disk" != "/dev/$boot_disk" ] || stop "target disk $disk is the USB stick itself."
 
 if [ "$force" = 0 ]; then
@@ -63,6 +89,15 @@ if [ "$force" = 0 ]; then
     esac
   fi
   [ ! -e "$luks_part" ] || stop "this machine already holds an install. Remove the USB stick and reboot. To erase and reinstall anyway, run: sudo agency-install --force"
+fi
+
+# An install on a different disk would clash with this one: both would carry
+# the same partition labels and the machine could boot either.
+if [ -e "$luks_part" ]; then
+  old_disk=/dev/$(lsblk -no PKNAME "$(readlink -f "$luks_part")" | head -n1)
+  if [ "$old_disk" != "$disk" ]; then
+    stop "an earlier install is on $old_disk, and you are installing to $disk. Erase the old one first (this destroys everything on $old_disk): sudo wipefs -a $old_disk"
+  fi
 fi
 
 [ "$(cat /sys/class/tpm/tpm0/tpm_version_major 2>/dev/null || true)" = 2 ] ||

@@ -10,8 +10,9 @@
 
   timeZone = "UTC";
 
-  # The disk the installer ERASES. Leave empty to use the largest internal
-  # disk, or name one (for example "/dev/nvme0n1") on machines with several.
+  # The disk the installer ERASES. Leave empty on a machine with one internal
+  # disk. With several, the installer stops and asks; to make it unattended,
+  # name the disk here, ideally by its /dev/disk/by-id/... path.
   disk = "";
 
   # Optional wipe guard. If set, the installer only runs unattended on a
