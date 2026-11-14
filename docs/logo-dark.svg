@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 456 120" width="365" height="96" role="img" aria-label="agency">
+  <path d="M14 34 L46 60 L14 86" fill="none" stroke="#4ade80" stroke-width="12" stroke-linecap="round" stroke-linejoin="round"/>
+  <text x="72" y="86" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, 'DejaVu Sans Mono', monospace" font-size="80" font-weight="700" fill="#fafafa" textLength="316" lengthAdjust="spacingAndGlyphs">agency</text>
+  <rect x="402" y="26" width="40" height="66" rx="4" fill="#4ade80"/>
+</svg>
