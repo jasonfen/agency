@@ -56,19 +56,26 @@ if [ -n "$boot_part" ]; then
   boot_disk=$(lsblk -no PKNAME "$boot_part" 2>/dev/null | head -n1 || true)
 fi
 
-# Internal disks: not removable, not USB, not the boot stick.
-internal_disks() {
+# Internal disks, best first: NVMe before SATA and anything else.
+# Removable disks, USB disks and the boot stick are never candidates.
+ranked_disks() {
   lsblk -dnbo NAME,SIZE,TYPE,RM,TRAN |
     awk -v skip="$boot_disk" \
-      '$3 == "disk" && $4 == 0 && $5 != "usb" && $1 != skip && $1 !~ /^(zram|loop|ram)/ { print "/dev/" $1 }'
+      '$3 == "disk" && $4 == 0 && $5 != "usb" && $1 != skip && $1 !~ /^(zram|loop|ram)/ { print ($5 == "nvme" ? 0 : 1), "/dev/" $1 }' |
+    sort -n
 }
 
-# With no disk named, only proceed if there is exactly one candidate.
-# Never guess between several: the wrong guess erases someone's data.
+# With no disk named, take the NVMe disk, or failing that the SATA disk.
+# If there are several of the best kind, stop: a wrong guess erases data.
 if [ -z "$disk" ]; then
-  mapfile -t candidates < <(internal_disks)
+  mapfile -t ranked < <(ranked_disks)
+  first=${ranked[0]:-}
+  candidates=()
+  for line in "${ranked[@]}"; do
+    if [ "${line%% *}" = "${first%% *}" ]; then candidates+=("${line#* }"); fi
+  done
   if [ "${#candidates[@]}" -gt 1 ]; then
-    say "This machine has more than one internal disk:"
+    say "This machine has several disks of the same kind:"
     lsblk -do NAME,SIZE,MODEL,TRAN "${candidates[@]}"
     stop "choose one. Either run: sudo agency-install --disk /dev/NAME   or set 'disk' in settings.nix and rebuild the stick."
   fi
@@ -80,6 +87,12 @@ fi
 disk=$(readlink -f "$disk")
 [ "$disk" != "/dev/$boot_disk" ] || stop "target disk $disk is the USB stick itself."
 
+# Is there an earlier install, and on which disk?
+old_disk=""
+if [ -e "$luks_part" ]; then
+  old_disk=/dev/$(lsblk -no PKNAME "$(readlink -f "$luks_part")" | head -n1)
+fi
+
 if [ "$force" = 0 ]; then
   if [ -n "$AGENCY_VENDOR" ]; then
     vendor=$(cat /sys/class/dmi/id/sys_vendor 2>/dev/null || true)
@@ -88,17 +101,13 @@ if [ "$force" = 0 ]; then
       *) stop "this is a '$vendor' machine but the installer expects '$AGENCY_VENDOR'. If this really is the right machine, run: sudo agency-install --force" ;;
     esac
   fi
-  [ ! -e "$luks_part" ] || stop "this machine already holds an install. Remove the USB stick and reboot. To erase and reinstall anyway, run: sudo agency-install --force"
+  [ -z "$old_disk" ] || stop "this machine already holds an install, on $old_disk. If you meant to boot it, remove the USB stick and reboot. To erase it and install to $disk, run: sudo agency-install --force"
 fi
 
-# An install on a different disk would clash with this one: both would carry
-# the same partition labels and the machine could boot either.
-if [ -e "$luks_part" ]; then
-  old_disk=/dev/$(lsblk -no PKNAME "$(readlink -f "$luks_part")" | head -n1)
-  if [ "$old_disk" != "$disk" ]; then
-    stop "an earlier install is on $old_disk, and you are installing to $disk. Erase the old one first (this destroys everything on $old_disk): sudo wipefs -a $old_disk"
-  fi
-fi
+# An earlier install on a different disk must go: two installs carry the
+# same partition labels and the machine could boot either.
+clear_old=""
+if [ -n "$old_disk" ] && [ "$old_disk" != "$disk" ]; then clear_old=$old_disk; fi
 
 [ "$(cat /sys/class/tpm/tpm0/tpm_version_major 2>/dev/null || true)" = 2 ] ||
   stop "no TPM 2.0 chip found. Enable it in the BIOS (often 'Security Device Support' or 'Intel PTT')."
@@ -119,6 +128,9 @@ grep -Eq '^(ssh-|ecdsa-|sk-)' "$keys" ||
 # ------------------------------------------------------------- last call ---
 
 say "ALL DATA on $disk ($(lsblk -dno MODEL,SIZE "$disk" | tr -s ' ')) will be ERASED."
+if [ -n "$clear_old" ]; then
+  say "The earlier install on $clear_old ($(lsblk -dno MODEL,SIZE "$clear_old" | tr -s ' ')) will be ERASED too."
+fi
 say "To cancel, hold the power button now."
 for i in $(seq 30 -1 1); do
   printf '\r[agency] erasing in %2d seconds ' "$i"
@@ -127,6 +139,14 @@ done
 printf '\n'
 
 # --------------------------------------------------------------- install ---
+
+if [ -n "$clear_old" ]; then
+  say "Clearing the earlier install on $clear_old ..."
+  lsblk -lnpo NAME "$clear_old" | tail -n +2 | while read -r part; do wipefs -a "$part"; done
+  wipefs -a "$clear_old"
+  blockdev --rereadpt "$clear_old" || true
+  udevadm settle
+fi
 
 # The disk layout refers to the target as /dev/agency-target.
 ln -sfn "$disk" /dev/agency-target

@@ -10,9 +10,9 @@
 
   timeZone = "UTC";
 
-  # The disk the installer ERASES. Leave empty on a machine with one internal
-  # disk. With several, the installer stops and asks; to make it unattended,
-  # name the disk here, ideally by its /dev/disk/by-id/... path.
+  # The disk the installer ERASES. Leave empty to use the NVMe disk, or the
+  # SATA disk if there is no NVMe. With two of the same kind the installer
+  # stops and asks; name one here (ideally by /dev/disk/by-id/...) to avoid it.
   disk = "";
 
   # Optional wipe guard. If set, the installer only runs unattended on a
