@@ -19,7 +19,7 @@ jobs:
       - name: Lint the installer
         run: |
           shellcheck -s bash installer/agency-install.sh
-          python3 -m py_compile installer/server.py
+          python3 -m py_compile installer/server.py cli/agency.py
           node --check installer/ui/app.js
 
       - uses: cachix/install-nix-action@v31

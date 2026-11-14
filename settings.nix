@@ -22,8 +22,16 @@
   # Optional software, by id from apps.nix. The wizard starts from this list.
   apps = [ "chromium" "docker" ];
 
-  # Size of the virtual desktop agents use for GUI apps.
+  # Size of the virtual desktops agents use for GUI apps.
   desktopGeometry = "1280x800";
+
+  # How many virtual desktops run (:1, :2, ...). Give each agent that uses
+  # the GUI at the same time its own. `agency desktop add` changes this.
+  desktops = 1;
+
+  # The repo this machine updates from with `agency update`. Point it at
+  # your fork to update from there.
+  repo = "https://github.com/makors/agency";
 
   # --- Unattended installs -------------------------------------------------
   # Set this to true in your own fork to skip the wizard: the stick then

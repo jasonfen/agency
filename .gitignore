@@ -7,6 +7,8 @@ result-*
 *authkey*
 .env
 .env.*
-secrets/
+# Except the encrypted file `agency secret` writes.
+secrets/*
+!secrets/*.sops.json
 
 __pycache__/

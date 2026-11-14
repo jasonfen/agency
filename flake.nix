@@ -8,10 +8,22 @@
       url = "github:nix-community/disko";
       inputs.nixpkgs.follows = "nixpkgs";
     };
+
+    # Decrypts secrets/agency.sops.json at boot (see modules/secrets.nix).
+    sops-nix = {
+      url = "github:Mic92/sops-nix";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
   };
 
   outputs =
-    { self, nixpkgs, disko, ... }:
+    {
+      self,
+      nixpkgs,
+      disko,
+      sops-nix,
+      ...
+    }:
     let
       system = "x86_64-linux";
       settings = import ./settings.nix;
@@ -24,6 +36,7 @@
         inherit system specialArgs;
         modules = [
           disko.nixosModules.disko
+          sops-nix.nixosModules.sops
           ./hosts/agency
         ];
       };
@@ -33,6 +46,13 @@
         inherit system specialArgs;
         modules = [ ./installer ];
       };
+
+      # The app catalog as plain data, for `agency apps`.
+      appCatalog = map (app: {
+        inherit (app) id label;
+        kind = if app ? npm then "npm" else "system";
+        npm = app.npm or null;
+      }) (import ./apps.nix { pkgs = nixpkgs.legacyPackages.${system}; inherit settings; });
 
       packages.${system} = {
         iso = self.nixosConfigurations.installer.config.system.build.isoImage;

@@ -79,6 +79,7 @@ let
       export AGENCY_WIPE=${target.system.build.destroyFormatMount}/bin/disko-destroy-format-mount
       export AGENCY_SYSTEM=${target.system.build.toplevel}
       export AGENCY_SOURCE=${self}
+      export AGENCY_REV=${lib.escapeShellArg (self.rev or (lib.removeSuffix "-dirty" (self.dirtyRev or "")))}
 
       ${builtins.readFile ./agency-install.sh}
     '';

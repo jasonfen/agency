@@ -555,6 +555,9 @@ elif [ "$host" != "$AGENCY_HOSTNAME" ]; then
   touch "$notes/rebuild"
 fi
 if [ "${#chosen_npm[@]}" -gt 0 ]; then printf '%s\n' "${chosen_npm[@]}" >"$notes/npm-packages"; fi
+# The commit this system was built from, so `agency update` knows where
+# the machine's own changes start.
+if [ -n "${AGENCY_REV:-}" ]; then printf '%s\n' "$AGENCY_REV" >/mnt/var/lib/agency/source-rev; fi
 
 # Carry the Tailscale sign-in and any Wi-Fi network over to the new system.
 if [ "$ts_ok" = 1 ]; then

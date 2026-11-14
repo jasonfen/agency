@@ -7,6 +7,9 @@
 #   rebuild        rebuild the system, because settings.nix was changed
 #   npm-packages   tools to `npm install -g` for the agent account
 #
+# Then it links /etc/nixos to the agency repo on GitHub (`agency setup-repo`),
+# so `agency update` works. If that fails, `agency update` does it later.
+#
 # Each note is deleted once done, so a failed run retries only what is left.
 # Watch it with: journalctl -fu agency-firstboot
 {
@@ -49,7 +52,7 @@ in
       done
 
       if [ -e ${notes}/rebuild ]; then
-        nixos-rebuild switch --flake /etc/nixos#agency
+        nixos-rebuild switch --flake path:/etc/nixos#agency
         rm -f ${notes}/rebuild
       fi
 
@@ -57,6 +60,8 @@ in
         runuser -l ${settings.user} -c "npm install -g $(tr '\n' ' ' <${notes}/npm-packages)"
       fi
       rm -f ${notes}/npm-packages
+
+      runuser -l ${settings.user} -c "agency setup-repo" || true
 
       rmdir ${notes}
     '';

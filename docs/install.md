@@ -35,6 +35,8 @@ The stick carries a prebuilt system, so apps you added in the wizard are install
 journalctl -fu agency-firstboot
 ```
 
+When it is done, `/etc/nixos` is linked to this repo on GitHub, so `agency update` pulls new versions. To update from your fork instead, set `repo` in `/etc/nixos/settings.nix`; the next `agency update` switches to it.
+
 ## A stick that asks nothing
 
 Fork the repo and edit `settings.nix`:
@@ -62,5 +64,5 @@ To join Tailscale unattended, format a second stick as FAT with the label `AGENC
 ## Limits
 
 - Secure Boot must be off. TPM unlock protects the data if the disk is removed, but not if someone boots another OS on the machine.
-- The disk recovery key is also saved to `/root/luks-recovery-key.txt`. Move it to a password manager and delete the file.
+- The disk recovery key is also saved to `/root/luks-recovery-key.txt`. Run `agency recovery-key` over SSH: it shows the key once and deletes the file.
 - The remaining setup work is listed in [AGENTS.md](../AGENTS.md).

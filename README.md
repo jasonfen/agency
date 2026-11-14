@@ -34,12 +34,17 @@ ssh agent@agency
 
 ## Use
 
-Start one of the agents you picked and point it at [AGENTS.md](AGENTS.md), which tells it how the machine works and what's left to set up.
+Start one of the agents you picked. [AGENTS.md](AGENTS.md) tells it how the machine works and what's left to set up.
 
 ```sh
-gui chromium                                   # open an app on the agents' desktop
-sudo nixos-rebuild switch --flake /etc/nixos#agency   # apply a change to the system
+agency                          # what the machine is doing
+agency update                   # pull the newest agency and rebuild
+agency secret set OPENAI_API_KEY   # an encrypted key the agents can read
+agency recovery-key             # see the disk recovery key once, then delete it
+gui chromium                    # open an app on the agents' desktop
 ```
+
+Agents find out how the machine works on their own: Claude Code, Codex and OpenCode get a short note and skills for the desktop, system changes and secrets.
 
 Their desktop lives at `http://agency:6081/vnc.html` once you're on Tailscale (swap in your machine's name).
 
