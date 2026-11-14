@@ -8,3 +8,5 @@ result-*
 .env
 .env.*
 secrets/
+
+__pycache__/
