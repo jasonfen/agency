@@ -181,6 +181,20 @@ in
         };
       };
 
+      # The setup screen is not a website: no saved passwords, addresses or
+      # cards, and no offers to save what was typed (Wi-Fi password, names).
+      programs.chromium = {
+        enable = true;
+        extraOpts = {
+          AutofillAddressEnabled = false;
+          AutofillCreditCardEnabled = false;
+          PasswordManagerEnabled = false;
+          PasswordLeakDetectionEnabled = false;
+          SearchSuggestEnabled = false;
+          TranslateEnabled = false;
+        };
+      };
+
       # The browser draws no text at all unless the system has a font
       # configuration and at least one font, even though the page brings
       # its own fonts. The minimal installer switches both off.

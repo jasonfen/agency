@@ -110,7 +110,7 @@ const screens = {
               </label>`).join("")}</div>
             <div class="field">
               <label for="wifi-pass">Wi-Fi password</label>
-              <input class="input" id="wifi-pass" type="password" autocomplete="off">
+              <input class="input" id="wifi-pass" type="password" autocomplete="new-password">
             </div>`;
       wifi = `<h2>Wi-Fi</h2>
         ${hint ? `<p class="muted">${hint}</p>` : ""}
