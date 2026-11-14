@@ -48,3 +48,49 @@ jobs:
           path: result/iso/*.iso
           compression-level: 0
           retention-days: 3
+
+      # Puts the ISO on Cloudflare R2 so the download page always offers the
+      # newest build. Builds from main and version tags only. Skipped when the
+      # R2 secrets are not set, for example in a fork.
+      - name: Publish ISO to R2
+        if: github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v')
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          AWS_DEFAULT_REGION: auto
+          # Newer aws CLI versions send checksums R2 does not accept.
+          AWS_REQUEST_CHECKSUM_CALCULATION: when_required
+          AWS_RESPONSE_CHECKSUM_VALIDATION: when_required
+          R2_ENDPOINT: ${{ secrets.R2_ENDPOINT }}
+          BUCKET: agency-iso
+        run: |
+          if [ -z "$AWS_ACCESS_KEY_ID" ]; then
+            echo "R2 secrets not set, skipping"; exit 0
+          fi
+          iso=$(ls result/iso/*.iso)
+          date=$(date -u +%Y-%m-%d)
+          short=${GITHUB_SHA::7}
+          build="builds/$date-$short/agency-installer.iso"
+          s3="aws s3 --endpoint-url $R2_ENDPOINT"
+          disp='attachment; filename="agency-installer.iso"'
+
+          $s3 cp "$iso" "s3://$BUCKET/$build" \
+            --content-type application/x-iso9660-image --content-disposition "$disp"
+          $s3 cp "s3://$BUCKET/$build" "s3://$BUCKET/latest/agency-installer.iso" \
+            --content-type application/x-iso9660-image --content-disposition "$disp" \
+            --metadata-directive REPLACE --cache-control "public, max-age=300"
+
+          cat > latest.json <<EOF
+          {
+            "url": "latest/agency-installer.iso",
+            "build": "$build",
+            "fileName": "agency-installer.iso",
+            "sizeBytes": $(stat -c %s "$iso"),
+            "sha256": "$(sha256sum "$iso" | cut -d' ' -f1)",
+            "date": "$date",
+            "commit": "$GITHUB_SHA",
+            "version": "${GITHUB_REF_NAME}"
+          }
+          EOF
+          $s3 cp latest.json "s3://$BUCKET/latest.json" \
+            --content-type application/json --cache-control "no-cache"
