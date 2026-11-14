@@ -13,13 +13,14 @@ Otherwise download the ISO from [agency.makors.xyz](https://agency.makors.xyz) (
 
 ## The setup screen
 
-The stick boots into a setup screen on the laptop's own display. It works with the keyboard alone (Tab, arrows, Space, Enter) or with a mouse. It asks five things:
+The stick boots into a setup screen on the laptop's own display. It works with the keyboard alone (Tab, arrows, Space, Enter) or with a mouse. It asks six things:
 
 1. **Network.** If there is no connection it offers to join Wi-Fi.
-2. **Name and login.** A name for the machine, and your GitHub username.
+2. **Name and login.** A name for the machine, your GitHub username, and a password for the machine's own screen (Ctrl+Alt+F2). SSH still uses your keys.
 3. **Disk.** Pick the disk to erase from a list showing size and model.
 4. **Tailscale.** Optional. A QR code appears; scan it with your phone and approve the device. The sign-in is carried over to the installed system.
 5. **Apps.** Pick agents (Claude Code, Codex and others) and tools (browser, Docker and so on). The list comes from [`apps.nix`](../apps.nix).
+6. **Sign in.** Optional. GitHub, and Codex if you picked it: scan the code with your phone and type the short code it shows. Claude Code and OpenCode sign in later from the dashboard.
 
 ![The disk, Tailscale, apps, review, installing and done screens](setup-screens.png)
 

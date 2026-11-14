@@ -25,6 +25,9 @@ function render(s) {
   $("tailscale").classList.toggle("mono", !!s.tailscale);
   $("desktops").textContent = s.desktops;
   $("system").textContent = s.system;
+  $("foot").textContent = s.console
+    ? "To open a console, press Ctrl+Alt+F2."
+    : "To use the console, set a password over SSH: sudo passwd agent";
 
   let code;
   if (!s.tailscale) {

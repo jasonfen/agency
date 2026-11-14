@@ -259,9 +259,9 @@ SIGNIN_TOOLS = {
         # Enter to open a browser" (there is none; BROWSER=true).
         "enter": [r"Authenticate Git with your GitHub credentials\?", r"Press Enter to open"],
     },
-    "claude": {"label": "Claude Code", "cmd": "claude auth login", "device": False, "enter": []},
-    "codex": {"label": "Codex", "cmd": "codex login --device-auth || codex login", "device": True, "enter": []},
-    "opencode": {"label": "OpenCode", "cmd": "opencode auth login", "device": False, "enter": []},
+    # Only --device-auth: plain `codex login` waits for a browser on this
+    # computer, which a phone cannot reach.
+    "codex": {"label": "Codex", "cmd": "codex login --device-auth", "device": True, "enter": []},
 }
 
 URL = re.compile(r"https://[^\s\"'<>│]+")
@@ -467,7 +467,7 @@ class Install:
             ok, out, _ = sh("nix-store", "-qR", SYSTEM, timeout=120)
             self.total_paths = len(out.split()) if ok else 0
 
-    def start(self, name, disk, user, apps, tailscale_state, signin_home):
+    def start(self, name, disk, user, apps, tailscale_state, signin_home, password_hash=""):
         with self.lock:
             if self.state["state"] == "running":
                 return
@@ -479,6 +479,8 @@ class Install:
             cmd += ["--tailscale-state", tailscale_state]
         if signin_home:
             cmd += ["--signin-home", signin_home]
+        if password_hash:
+            cmd += ["--password-hash-file", password_hash]
         threading.Thread(target=self._run, args=(cmd,), daemon=True).start()
 
     def _run(self, cmd):
@@ -513,6 +515,19 @@ class Install:
                                   recoveryKey=key, recoveryQr=qr_svg(key) if key else "")
             else:
                 self.state.update(state="failed", error=stopped or "The install stopped with an error.")
+
+
+def password_hash_file(password):
+    """Hash the console password (SHA-512 crypt) into a private file."""
+    p = subprocess.run(["openssl", "passwd", "-6", "-stdin"], input=password + "\n",
+                       capture_output=True, text=True)
+    if p.returncode != 0 or not p.stdout.startswith("$6$"):
+        return ""
+    path = WORK / "password-hash"
+    path.touch(mode=0o600)
+    path.chmod(0o600)
+    path.write_text(p.stdout.strip() + "\n")
+    return str(path)
 
 
 tailscale = Tailscale()
@@ -605,7 +620,11 @@ class Handler(BaseHTTPRequestHandler):
             if (data.get("disk") not in valid_disks or not USERNAME.match(data.get("user", ""))
                     or not MACHINE_NAME.match(data.get("name", ""))):
                 return self.send_json({"error": "bad request"}, 400)
-            install.start(data["name"], data["disk"], data["user"], apps, tailscale.state_file(), signin.home())
+            password = str(data.get("password", ""))
+            if len(password) < 8:
+                return self.send_json({"error": "bad request"}, 400)
+            install.start(data["name"], data["disk"], data["user"], apps, tailscale.state_file(), signin.home(),
+                          password_hash_file(password))
             return self.send_json({"ok": True})
         if path == "/api/restart":
             subprocess.Popen(["systemctl", "reboot"])

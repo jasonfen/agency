@@ -47,6 +47,7 @@ let
   );
 
   tools = [
+    pkgs.openssl # hashes the console password
     config.system.build.nixos-install
     config.nix.package
     config.systemd.package
@@ -63,13 +64,14 @@ let
     pkgs.tailscale
   ];
 
-  # For the optional "Sign in" step: the CLIs to sign in to, tmux to run
-  # each login in, and ttyd to show that login as a terminal on the page.
+  # For the optional "Sign in" step: the CLIs whose sign-in works from a
+  # phone with a short code (GitHub and Codex), tmux to run each login in,
+  # and ttyd to show that login as a terminal on the page. Claude Code and
+  # OpenCode need a long code pasted back, so they sign in later from the
+  # dashboard, where copy and paste work.
   signinTools = [
     pkgs.gh
-    pkgs.claude-code
     pkgs.codex
-    pkgs.opencode
     pkgs.tmux
     pkgs.ttyd
   ];
@@ -151,9 +153,6 @@ in
       isoImage.squashfsCompression = "zstd -Xcompression-level 6";
 
       environment.systemPackages = [ agency-install ];
-
-      # Claude Code, offered on the "Sign in" step, is unfree.
-      nixpkgs.config.allowUnfreePredicate = pkg: lib.getName pkg == "claude-code";
 
       boot.kernelParams = [
         "quiet"

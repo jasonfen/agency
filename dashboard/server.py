@@ -198,7 +198,7 @@ def accounts():
             entry["signedIn"] = (HOME / auth_file).exists()
             entry["detail"] = "Signed in" if entry["signedIn"] else "Not signed in"
         else:
-            entry["detail"] = "Not installed. Add it under Apps."
+            continue  # only tools that are installed; add others under Apps
         found.append(entry)
     return found
 
@@ -454,6 +454,13 @@ def joined(items):
     return items[0] if len(items) == 1 else ", ".join(items[:-1]) + " and " + items[-1]
 
 
+@cached(60)
+def console_password():
+    """Whether the agent account has a password, so the console can be used."""
+    ok, out, _ = sh("sudo", "-n", "passwd", "-S", USER, timeout=10)
+    return ok and len(out.split()) > 1 and out.split()[1] == "P"
+
+
 def screen():
     name = tailnet_name()
     try:
@@ -478,6 +485,7 @@ def screen():
         "system": text,
         "url": url if name else "",
         "qr": qr_cached(url) if name and url else "",
+        "console": console_password(),
     }
 
 

@@ -6,6 +6,7 @@
 #
 #   rebuild        rebuild the system, because settings.nix was changed
 #   npm-packages   tools to `npm install -g` for the agent account
+#   password-hash  the console password chosen in setup, as a hash
 #   home/          sign-ins made on the setup screen (GitHub, agent CLIs),
 #                  copied into the agent's home
 #
@@ -43,6 +44,7 @@ in
       pkgs.coreutils
       pkgs.findutils
       pkgs.util-linux
+      pkgs.shadow
     ];
     environment.HOME = "/root";
     serviceConfig = {
@@ -52,6 +54,13 @@ in
       TimeoutStartSec = "infinity";
     };
     script = ''
+      # The console password from setup. First, so the console works even
+      # when the network does not.
+      if [ -s ${notes}/password-hash ]; then
+        usermod -p "$(cat ${notes}/password-hash)" ${settings.user}
+        rm -f ${notes}/password-hash
+      fi
+
       until curl -fsS --max-time 10 -o /dev/null https://cache.nixos.org/nix-cache-info; do
         sleep 5
       done

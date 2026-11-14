@@ -18,6 +18,7 @@
 #   --apps "ID ID ..."      which apps from apps.nix to install
 #   --tailscale-state FILE  a saved Tailscale sign-in to carry over
 #   --signin-home DIR       a home folder with sign-ins (GitHub, agent CLIs)
+#   --password-hash-file F  a crypt(3) hash for the console password
 #                           to carry over to the agent account
 #   --force                 skip the vendor and already-installed checks
 #   --yes                   skip the 30 second countdown
@@ -43,6 +44,7 @@ apps_arg=""
 apps_given=0
 ts_state=""
 signin_home=""
+password_hash=""
 countdown=1
 reboot=1
 args=("$@")
@@ -73,6 +75,10 @@ while [ $# -gt 0 ]; do
       ;;
     --signin-home)
       signin_home=${2:-}
+      shift
+      ;;
+    --password-hash-file)
+      password_hash=$(cat "${2:-/dev/null}")
       shift
       ;;
     --yes) countdown=0 ;;
@@ -291,6 +297,23 @@ else
       break
     else
       note "No SSH keys were found for '$gh_user'. Add one at github.com/settings/keys, then try again."
+    fi
+    pause "Press Enter to try again."
+  done
+  while true; do
+    screen "2 of 5   name and login"
+    note "A password for this computer's own screen (Ctrl+Alt+F2). SSH still uses your keys."
+    printf '\n'
+    pw1=$(gum input --no-show-help --password --header "Password (8 or more characters)")
+    pw2=$(gum input --no-show-help --password --header "Same password again")
+    if [ "${#pw1}" -lt 8 ]; then
+      note "That is shorter than 8 characters."
+    elif [ "$pw1" != "$pw2" ]; then
+      note "The two passwords are different."
+    else
+      password_hash=$(printf '%s\n' "$pw1" | openssl passwd -6 -stdin)
+      unset pw1 pw2
+      break
     fi
     pause "Press Enter to try again."
   done
@@ -562,6 +585,8 @@ elif [ "$host" != "$AGENCY_HOSTNAME" ]; then
   touch "$notes/rebuild"
 fi
 if [ "${#chosen_npm[@]}" -gt 0 ]; then printf '%s\n' "${chosen_npm[@]}" >"$notes/npm-packages"; fi
+# The console password, as a hash only. The first start sets it.
+if [ -n "$password_hash" ]; then (umask 077 && printf '%s\n' "$password_hash" >"$notes/password-hash"); fi
 
 # Sign-ins made on the setup screen: only the credential files, which the
 # first start moves into the agent's home. Their contents are never shown.

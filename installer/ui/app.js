@@ -182,7 +182,7 @@ const screens = {
   access() {
     return {
       html: `<h1>Name and login</h1>
-        <p class="lede">Give this computer a name. You log in over SSH with the keys already on your GitHub account, so there is no password to set.</p>
+        <p class="lede">Give this computer a name. You log in over SSH with the keys on your GitHub account. The password is for this computer's own screen.</p>
         <div class="field">
           <label for="machine-name">Name of this computer</label>
           <input class="input" id="machine-name" value="${esc(state.name)}" autocomplete="off" autocapitalize="off" spellcheck="false">
@@ -192,6 +192,15 @@ const screens = {
           <label for="gh-user">GitHub username</label>
           <input class="input" id="gh-user" value="${esc(state.user)}" autocomplete="off" autocapitalize="off" spellcheck="false">
         </div>
+        <div class="field">
+          <label for="pw1">Password</label>
+          <input class="input" id="pw1" type="password" autocomplete="new-password">
+          <span class="small muted">8 or more characters. To use it, press Ctrl+Alt+F2 on this computer.</span>
+        </div>
+        <div class="field">
+          <label for="pw2">Password again</label>
+          <input class="input" id="pw2" type="password" autocomplete="new-password">
+        </div>
         ${state.accessError ? `<div class="notice notice--bad">${esc(state.accessError)}</div>` : ""}`,
       actions: [
         { label: "Back", run: () => show("network") },
@@ -200,6 +209,12 @@ const screens = {
           async run() {
             state.name = $("#machine-name").value.trim().toLowerCase();
             state.user = $("#gh-user").value.trim();
+            const pw1 = $("#pw1").value, pw2 = $("#pw2").value;
+            if (pw1.length < 8 || pw1 !== pw2) {
+              state.accessError = pw1.length < 8 ? "The password needs 8 or more characters." : "The two passwords are different.";
+              return redraw();
+            }
+            state.password = pw1;
             state.busy = true;
             redraw();
             let res = await api("name", { name: state.name });
@@ -320,11 +335,13 @@ const screens = {
   },
 
   signin() {
-    const tools = state.signin?.tools || [];
+    const tools = offered();
+    const later = state.info.apps.filter((a) => ["claude-code", "opencode"].includes(a.id) && state.apps.has(a.id)).map((a) => a.label);
     return {
       html: `<h1>Sign in</h1>
         <p class="lede">This step is optional; you can do this later from the agency dashboard.</p>
-        ${tools.length ? `<div class="accounts">${tools.map(accountRow).join("")}</div>` : ""}`,
+        ${tools.length ? `<div class="accounts">${tools.map(accountRow).join("")}</div>` : ""}
+        ${later.length ? `<p class="small muted" style="margin-top: var(--s2)">Sign in to ${esc(later.join(" and "))} from the dashboard after setup.</p>` : ""}`,
       actions: [
         { label: "Back", run: () => show("apps") },
         { label: "Continue", primary: true, run: () => show("review") },
@@ -340,7 +357,7 @@ const screens = {
         });
       },
       bind() {
-        (state.signin?.tools || []).forEach((t) => bindAccount(t.id));
+        offered().forEach((t) => bindAccount(t.id));
       },
     };
   },
@@ -348,7 +365,7 @@ const screens = {
   review() {
     const disk = state.disks.find((d) => d.path === state.disk);
     const apps = state.info.apps.filter((a) => state.apps.has(a.id)).map((a) => a.label);
-    const signedIn = (state.signin?.tools || []).filter((t) => t.state === "done")
+    const signedIn = offered().filter((t) => t.state === "done")
       .map((t) => t.who ? `${t.label} (${t.who})` : t.label);
     const also = state.earlier && state.earlier !== state.disk
       ? ` The earlier install on <code>${esc(state.earlier)}</code> will be erased as well.` : "";
@@ -357,7 +374,7 @@ const screens = {
         <p class="lede">Check these, then install.</p>
         <dl class="summary">
           <dt>Name</dt><dd>${esc(state.name)}</dd>
-          <dt>Log in with</dt><dd>${state.keyCount} SSH key${state.keyCount === 1 ? "" : "s"} from github.com/${esc(state.user)}</dd>
+          <dt>Log in with</dt><dd>${state.keyCount} SSH key${state.keyCount === 1 ? "" : "s"} from github.com/${esc(state.user)}, and a password on this computer's screen</dd>
           <dt>Disk</dt><dd>${esc(disk.model)}, ${esc(disk.size)} <span class="muted code">${esc(disk.path)}</span></dd>
           <dt>Tailscale</dt><dd>${state.tailscale.state === "connected" ? "Connected" : "Not set up"}</dd>
           <dt>Apps</dt><dd>${apps.length ? esc(apps.join(", ")) : "None"}</dd>
@@ -369,7 +386,7 @@ const screens = {
         {
           label: "Erase disk and install", danger: true,
           async run() {
-            await api("install", { name: state.name, disk: state.disk, user: state.user, apps: [...state.apps] });
+            await api("install", { name: state.name, disk: state.disk, user: state.user, apps: [...state.apps], password: state.password });
             show("installing");
           },
         },
@@ -461,6 +478,9 @@ async function pollTailscale() {
 // a redraw would reload the terminal and clear a half-typed code.
 
 const tool = (id) => state.signin.tools.find((t) => t.id === id);
+
+// GitHub always; an agent only if it was picked on the Apps step.
+const offered = () => (state.signin?.tools || []).filter((t) => t.id === "github" || state.apps.has(t.id));
 
 function accountRow(t) {
   const open = state.signinOpen === t.id && t.state === "running";
