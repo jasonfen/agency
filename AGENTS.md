@@ -34,12 +34,27 @@ Anything in the home directory. Use these freely:
 - `npm install -g <pkg>` installs to `~/.npm-global` (already on `PATH`).
 - `uv` / `pip install --user` for Python tools.
 - `nix shell nixpkgs#<pkg>` for a tool you need once.
-- `docker run ...` for services and throwaway environments.
-- `distrobox create -i ubuntu:24.04` when software insists on a normal distro.
+- `docker run ...` for services and throwaway environments, and
+  `distrobox create -i ubuntu:24.04` when software insists on a normal
+  distro. Both need the `docker` app (see below).
 
 Downloaded Linux binaries and AppImages run directly (`nix-ld` and AppImage
 support are enabled). If a binary fails with a missing library, add the
 library to `programs.nix-ld.libraries` in `modules/agents.nix`.
+
+## Optional apps
+
+`apps.nix` is a catalog of optional software, and `apps` in `settings.nix`
+lists the ids that are switched on. The human picked a first set in the
+installer. To add one, put its id in that list and rebuild; to offer
+something new, add an entry to `apps.nix`.
+
+Agent CLIs in the catalog are the `npm` kind: they are installed with
+`npm install -g` into this account, not by a rebuild, so they can update
+themselves.
+
+Right after an install, the choices are still being applied in the
+background. Check with `journalctl -u agency-firstboot`.
 
 ## GUI apps and computer use
 
@@ -60,9 +75,11 @@ the browser profile persists, so you stay signed in afterwards.
 
 | Path | What it holds |
 | --- | --- |
-| `settings.nix` | Names, disk, SSH keys: the values that differ per machine |
+| `settings.nix` | Names, SSH keys, chosen apps: the values that differ per machine |
+| `apps.nix` | Catalog of optional software |
 | `hosts/agency/` | Boot, hardware, disk layout |
 | `modules/agents.nix` | The agent account and tools |
+| `modules/apps.nix`, `modules/firstboot.nix` | Apply the chosen apps |
 | `modules/remote.nix` | SSH, Tailscale, firewall |
 | `modules/desktop.nix` | The virtual desktop |
 | `modules/laptop.nix` | Lid, sleep, thermals |
@@ -86,23 +103,21 @@ These were planned but deliberately left out of the first install so that it
 had fewer ways to fail. Do them one at a time, each as its own commit.
 
 1. **Move the repo under git.** `/etc/nixos` is a plain copy. After
-   `gh auth login`, clone `makors/agency` to `~/agency`, and point
-   `/etc/nixos` at it (or rebuild from `~/agency`).
+   `gh auth login`, ask the human which repo to track (their fork, if they
+   have one), clone it to `~/agency`, carry over `settings.nix`, and rebuild
+   from there.
 2. **Store the disk recovery key.** Ask the human to copy
    `/root/luks-recovery-key.txt` into their password manager, then delete it.
-3. **T3 Code as a service.** `npx t3@latest` runs it; make it a systemd user
-   service so it survives reboots.
+3. **T3 Code as a service.** If it was chosen, the `t3` command is
+   installed; make it a systemd user service so it survives reboots.
 4. **Secrets.** Add sops-nix so API keys live encrypted in the repo and are
    readable by agents at runtime.
-5. **Bambu Studio.** Install via Flatpak (enable `services.flatpak`), run it
-   on display `:1`, sign in with the human, and test slicing from the CLI.
-   Printing must go through Bambu Studio itself; Developer Mode is off.
-6. **Secure Boot.** Add lanzaboote, then re-enrol the TPM. Until then TPM
+5. **Secure Boot.** Add lanzaboote, then re-enrol the TPM. Until then TPM
    unlock protects the disk if it is removed, but not against someone booting
    another OS on this laptop.
-7. **Battery care.** On a laptop, try to cap charge at 80%. How depends on
+6. **Battery care.** On a laptop, try to cap charge at 80%. How depends on
    the vendor (look under `/sys/class/power_supply/BAT*/`).
-8. **Nvidia.** Only if GPU compute is wanted: `hardware.nvidia` with PRIME
+7. **Nvidia.** Only if GPU compute is wanted: `hardware.nvidia` with PRIME
    offload, and remove the nouveau blacklist in `hosts/agency/hardware.nix`.
-9. **More desktops.** One display per concurrent GUI agent: turn the three
+8. **More desktops.** One display per concurrent GUI agent: turn the three
    services in `modules/desktop.nix` into templates (`:2`, `:3`, ...).

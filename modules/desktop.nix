@@ -2,7 +2,7 @@
 # where every GUI app runs. Agents drive it with xdotool and screenshots; you
 # watch or take over from a browser.
 #
-#   agents:  gui chromium            start an app on the desktop
+#   agents:  gui xterm               start an app on the desktop
 #            DISPLAY=:1 xdotool ...  click and type
 #            DISPLAY=:1 scrot x.png  screenshot
 #   you:     http://<hostName>:6081/vnc.html   (over Tailscale only)
@@ -63,7 +63,6 @@ in
 
   environment.systemPackages = with pkgs; [
     gui
-    chromium
     xterm
     xdotool
     scrot

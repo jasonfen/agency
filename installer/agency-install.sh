@@ -1,54 +1,241 @@
-# Unattended installer. Runs automatically when the USB stick boots.
+# The installer. It runs when the USB stick boots.
 #
-# Order matters: every check happens BEFORE the disk is touched, so a failed
-# check leaves the machine exactly as it was.
+# Two modes:
+#   wizard      (default) asks a few questions on screen, then installs
+#   unattended  installs with the values baked in from settings.nix
 #
-# These variables are filled in from settings.nix by installer/default.nix:
-#   AGENCY_DISK         disk to erase; empty = largest internal disk
-#   AGENCY_VENDOR       optional wipe guard: required DMI vendor text
-#   AGENCY_GITHUB_USER  GitHub account whose public SSH keys are installed
-#   AGENCY_SSH_KEYS     file with extra public keys from settings.nix
-#   AGENCY_WIPE         script that partitions, formats and mounts the disk
-#   AGENCY_SYSTEM       the prebuilt system to install
-#   AGENCY_SOURCE       this repo, copied to /etc/nixos on the new system
+# In both, every check and every question comes BEFORE the disk is touched.
+#
+# Options, for a human at the installer's shell (Alt+F2):
+#   --unattended          no questions
+#   --github-user NAME    whose SSH keys to install (unattended)
+#   --disk /dev/NAME      which disk to erase
+#   --force               unattended: skip the vendor and already-installed checks
+#
+# Filled in from settings.nix and apps.nix by installer/default.nix:
+#   AGENCY_HOSTNAME AGENCY_USER AGENCY_UNATTENDED AGENCY_DISK AGENCY_VENDOR
+#   AGENCY_GITHUB_USER   may be empty
+#   AGENCY_SSH_KEYS      file with extra public keys
+#   AGENCY_APPS          file, one app per line, tab-separated:
+#                        id, preselected (0/1), kind (system/npm), npm name, label
+#   AGENCY_BAKED_SYSTEM  ids of the system apps already in the prebuilt system
+#   AGENCY_WIPE          script that partitions, formats and mounts the disk
+#   AGENCY_SYSTEM        the prebuilt system
+#   AGENCY_SOURCE        this repo, copied to /etc/nixos on the new machine
 
-# Options (for a human at the installer's shell, Alt+F2):
-#   --force        skip the vendor and already-installed checks
-#   --disk /dev/X  install to this disk
+unattended=$AGENCY_UNATTENDED
 force=0
 disk=$AGENCY_DISK
+gh_user=$AGENCY_GITHUB_USER
+args=("$@")
 while [ $# -gt 0 ]; do
   case "$1" in
+    --unattended) unattended=1 ;;
     --force) force=1 ;;
     --disk)
       disk=${2:-}
       shift
       ;;
+    --github-user)
+      gh_user=${2:-}
+      shift
+      ;;
     *)
-      echo "usage: agency-install [--force] [--disk /dev/NAME]"
+      echo "usage: agency-install [--unattended] [--github-user NAME] [--disk /dev/NAME] [--force]"
       exit 2
       ;;
   esac
-  shift
+  if [ $# -gt 0 ]; then shift; fi
 done
 
 luks_part=/dev/disk/by-partlabel/disk-main-luks
 luks_key=/tmp/agency-luks.key
 stick=/dev/disk/by-label/AGENCY
+work=/tmp/agency-setup
+ts_dir=$work/tailscale
+log=$work/install.log
+
+# ------------------------------------------------------------- launcher ---
+# The wizard runs as a child process. If it stops for any reason (a failed
+# check, Cancel, Ctrl-C) the launcher offers to start again, so a mistake
+# never leaves a dead screen.
+
+if [ "$unattended" = 0 ] && [ "${AGENCY_STAGE:-}" != wizard ]; then
+  trap : INT
+  while true; do
+    if AGENCY_STAGE=wizard "$0" "${args[@]}"; then exit 0; fi
+    printf '\n'
+    choice=$(gum choose --header "Setup stopped. Nothing is lost by starting again." \
+      "Start again" "Open a shell" "Power off") || choice="Open a shell"
+    case "$choice" in
+      "Start again") ;;
+      "Power off")
+        systemctl poweroff
+        sleep infinity
+        ;;
+      *)
+        printf '\nType "exit" to come back to setup.\n'
+        bash -l || true
+        ;;
+    esac
+  done
+fi
+
+# -------------------------------------------------------------- helpers ---
 
 say() { printf '\n[agency] %s\n' "$*"; }
 
+note() { printf '%s\n' "$*" | fold -s -w 76; }
+
+pause() { read -r -p "$1 " _ || true; }
+
+# Stop before anything was changed.
 stop() {
-  say "STOPPED: $*"
-  say "Nothing on the disk was changed."
-  say "For a shell press Alt+F2. To retry: sudo agency-install"
+  if [ "$unattended" = 1 ]; then
+    say "STOPPED: $*"
+    say "Nothing on the disk was changed."
+    say "For a shell press Alt+F2. To retry: sudo agency-install"
+  else
+    printf '\n'
+    gum style --foreground 1 --bold "Setup can't continue"
+    note "$*"
+    printf '\n'
+    pause "Press Enter."
+  fi
   exit 1
 }
 
-# ---------------------------------------------------------------- checks ---
+# Start a wizard screen: clear, then a title.
+screen() {
+  printf '\033[2J\033[H'
+  gum style --border normal --border-foreground 2 --padding "0 2" --bold "agency setup   $1"
+  printf '\n'
+}
 
-[ "$(id -u)" = 0 ] || stop "must run as root."
-[ -d /sys/firmware/efi ] || stop "not booted in UEFI mode. Disable legacy/CSM boot in the BIOS."
+# Run a long command. The wizard shows a spinner and prints the command's
+# output only if it fails; unattended mode lets the output scroll.
+run() {
+  local title=$1
+  shift
+  if [ "$unattended" = 1 ]; then
+    say "$title"
+    "$@"
+  else
+    gum spin --spinner line --show-error --title "$title" -- "$@"
+  fi
+}
+
+mkdir -p "$work"
+
+ts_pid=""
+cleanup() { if [ -n "$ts_pid" ]; then kill "$ts_pid" 2>/dev/null || true; fi; }
+trap cleanup EXIT
+
+# --------------------------------------------------- checks, no questions ---
+
+[ "$(id -u)" = 0 ] || stop "The installer must run as root: sudo agency-install"
+[ -d /sys/firmware/efi ] ||
+  stop "This machine booted in legacy mode. Turn off legacy/CSM boot in the BIOS so it boots in UEFI mode."
+[ "$(cat /sys/class/tpm/tpm0/tpm_version_major 2>/dev/null || true)" = 2 ] ||
+  stop "No TPM 2.0 chip was found. Turn it on in the BIOS; it is often called 'Security Device Support', 'Intel PTT' or 'AMD fTPM'."
+
+if [ "$unattended" = 0 ]; then
+  screen "welcome"
+  note "This turns the computer into a machine for AI agents. It erases one disk, installs NixOS, and restarts."
+  printf '\n'
+  note "You will be asked five things first: network, who can log in, which disk, Tailscale, and which apps. Nothing is changed until you confirm at the end."
+  printf '\n'
+  pause "Press Enter to begin."
+fi
+
+# -------------------------------------------------------------- network ---
+
+online() { curl -fsS --max-time 8 -o /dev/null https://github.com; }
+
+wait_online() {
+  for _ in $(seq "$1"); do
+    if online; then return 0; fi
+    sleep 2
+  done
+  return 1
+}
+
+wifi_setup() {
+  nmcli device wifi rescan 2>/dev/null || true
+  sleep 4
+  mapfile -t ssids < <(nmcli -t -f SSID device wifi list 2>/dev/null | sed 's/\\:/:/g' | grep -v '^$' | sort -u)
+  if [ "${#ssids[@]}" = 0 ]; then
+    note "No Wi-Fi networks were found. This machine may need a network cable."
+    pause "Press Enter."
+    return 0
+  fi
+  local ssid pass
+  ssid=$(gum choose --header "Wi-Fi network" "${ssids[@]}")
+  pass=$(gum input --password --header "Password for $ssid (leave empty if it has none)" --placeholder "")
+  if [ -n "$pass" ]; then
+    nmcli device wifi connect "$ssid" password "$pass" || true
+  else
+    nmcli device wifi connect "$ssid" || true
+  fi
+}
+
+if [ "$unattended" = 1 ]; then
+  say "Waiting for the network ..."
+  wait_online 150 || stop "no internet connection. Check the network cable."
+else
+  screen "1 of 5   network"
+  note "Checking the internet connection ..."
+  until wait_online 6; do
+    screen "1 of 5   network"
+    choice=$(gum choose --header "No internet connection yet. A network cable is the easiest fix." \
+      "Check again" "Set up Wi-Fi")
+    if [ "$choice" = "Set up Wi-Fi" ]; then wifi_setup; fi
+  done
+fi
+
+# -------------------------------------------------------- who can log in ---
+
+keys=$work/authorized_keys
+cat "$AGENCY_SSH_KEYS" >"$keys"
+
+# Append the public keys of a GitHub account. Succeeds if at least one came.
+fetch_keys() {
+  local fetched=$work/github.keys
+  curl -fsS --max-time 15 "https://github.com/$1.keys" >"$fetched" || return 1
+  grep -Eq '^(ssh-|ecdsa-|sk-)' "$fetched" || return 1
+  cat "$fetched" >>"$keys"
+}
+
+valid_user() { [[ "$1" =~ ^[A-Za-z0-9-]{1,39}$ ]]; }
+
+if [ "$unattended" = 1 ]; then
+  if [ -n "$gh_user" ]; then
+    valid_user "$gh_user" || stop "'$gh_user' is not a valid GitHub username."
+    fetch_keys "$gh_user" || true
+  fi
+  grep -Eq '^(ssh-|ecdsa-|sk-)' "$keys" ||
+    stop "no SSH public key available. Add one to the GitHub account, pass --github-user NAME, or set 'sshKeys' in settings.nix."
+else
+  while true; do
+    screen "2 of 5   who can log in"
+    note "There is no password login. The machine accepts the SSH keys that are on a GitHub account, so type the account to use."
+    printf '\n'
+    gh_user=$(gum input --header "GitHub username" --placeholder "your-username" --value "$gh_user")
+    if ! valid_user "$gh_user"; then
+      note "That doesn't look like a GitHub username."
+    elif fetch_keys "$gh_user"; then
+      note "Found $(grep -Ec '^(ssh-|ecdsa-|sk-)' "$work/github.keys") SSH key(s) for $gh_user."
+      sleep 2
+      break
+    else
+      note "No SSH keys were found for '$gh_user'. Add one at github.com/settings/keys, then try again."
+    fi
+    pause "Press Enter to try again."
+  done
+fi
+
+# ----------------------------------------------------------------- disk ---
+
 # The USB stick we booted from must never be the target.
 boot_disk=""
 boot_part=$(findmnt -no SOURCE /iso 2>/dev/null || true)
@@ -65,27 +252,42 @@ ranked_disks() {
     sort -n
 }
 
-# With no disk named, take the NVMe disk, or failing that the SATA disk.
-# If there are several of the best kind, stop: a wrong guess erases data.
+describe() { lsblk -dno NAME,SIZE,MODEL "$1" | tr -s ' '; }
+
+mapfile -t ranked < <(ranked_disks)
+
 if [ -z "$disk" ]; then
-  mapfile -t ranked < <(ranked_disks)
-  first=${ranked[0]:-}
-  candidates=()
-  for line in "${ranked[@]}"; do
-    if [ "${line%% *}" = "${first%% *}" ]; then candidates+=("${line#* }"); fi
-  done
-  if [ "${#candidates[@]}" -gt 1 ]; then
-    say "This machine has several disks of the same kind:"
-    lsblk -do NAME,SIZE,MODEL,TRAN "${candidates[@]}"
-    stop "choose one. Either run: sudo agency-install --disk /dev/NAME   or set 'disk' in settings.nix and rebuild the stick."
+  if [ "$unattended" = 1 ]; then
+    # Take the NVMe disk, or failing that the SATA disk. If there are
+    # several of the best kind, stop: a wrong guess erases data.
+    first=${ranked[0]:-}
+    candidates=()
+    for line in "${ranked[@]}"; do
+      if [ "${line%% *}" = "${first%% *}" ]; then candidates+=("${line#* }"); fi
+    done
+    if [ "${#candidates[@]}" -gt 1 ]; then
+      say "This machine has several disks of the same kind:"
+      lsblk -do NAME,SIZE,MODEL,TRAN "${candidates[@]}"
+      stop "choose one. Either run: sudo agency-install --unattended --disk /dev/NAME   or set 'disk' in settings.nix and rebuild the stick."
+    fi
+    disk=${candidates[0]:-}
+  else
+    [ "${#ranked[@]}" -gt 0 ] || stop "No internal disk was found."
+    options=()
+    for line in "${ranked[@]}"; do
+      options+=("$(describe "${line#* }")|${line#* }")
+    done
+    screen "3 of 5   disk"
+    note "Choose the disk to install on. Everything on it will be erased, but not yet: you confirm at the end."
+    printf '\n'
+    disk=$(gum choose --header "Disk" --label-delimiter "|" "${options[@]}")
   fi
-  disk=${candidates[0]:-}
 fi
 if [ -z "$disk" ] || [ ! -b "$disk" ]; then
-  stop "no usable internal disk found (looked for '${disk:-any}'). Run lsblk to see what is there."
+  stop "No usable internal disk was found (looked for '${disk:-any}'). Run lsblk to see what is there."
 fi
 disk=$(readlink -f "$disk")
-[ "$disk" != "/dev/$boot_disk" ] || stop "target disk $disk is the USB stick itself."
+[ "$disk" != "/dev/$boot_disk" ] || stop "The target disk $disk is the USB stick itself."
 
 # Is there an earlier install, and on which disk?
 old_disk=""
@@ -93,15 +295,15 @@ if [ -e "$luks_part" ]; then
   old_disk=/dev/$(lsblk -no PKNAME "$(readlink -f "$luks_part")" | head -n1)
 fi
 
-if [ "$force" = 0 ]; then
+if [ "$unattended" = 1 ] && [ "$force" = 0 ]; then
   if [ -n "$AGENCY_VENDOR" ]; then
     vendor=$(cat /sys/class/dmi/id/sys_vendor 2>/dev/null || true)
     case "$vendor" in
       *"$AGENCY_VENDOR"*) ;;
-      *) stop "this is a '$vendor' machine but the installer expects '$AGENCY_VENDOR'. If this really is the right machine, run: sudo agency-install --force" ;;
+      *) stop "this is a '$vendor' machine but the installer expects '$AGENCY_VENDOR'. If this really is the right machine, run: sudo agency-install --unattended --force" ;;
     esac
   fi
-  [ -z "$old_disk" ] || stop "this machine already holds an install, on $old_disk. If you meant to boot it, remove the USB stick and reboot. To erase it and install to $disk, run: sudo agency-install --force"
+  [ -z "$old_disk" ] || stop "this machine already holds an install, on $old_disk. If you meant to boot it, remove the USB stick and reboot. To erase it and install to $disk, run: sudo agency-install --unattended --force"
 fi
 
 # An earlier install on a different disk must go: two installs carry the
@@ -109,36 +311,120 @@ fi
 clear_old=""
 if [ -n "$old_disk" ] && [ "$old_disk" != "$disk" ]; then clear_old=$old_disk; fi
 
-[ "$(cat /sys/class/tpm/tpm0/tpm_version_major 2>/dev/null || true)" = 2 ] ||
-  stop "no TPM 2.0 chip found. Enable it in the BIOS (often 'Security Device Support' or 'Intel PTT')."
+# ------------------------------------------------------------ Tailscale ---
+# Sign in here, then carry the sign-in over to the installed system, so the
+# machine is on the tailnet from its first start.
 
-# SSH keys: without one nobody could log in to the finished machine.
-keys=$(mktemp)
-cat "$AGENCY_SSH_KEYS" >"$keys"
-if [ -n "$AGENCY_GITHUB_USER" ]; then
-  say "Waiting for the network to fetch SSH keys of github.com/$AGENCY_GITHUB_USER ..."
-  for _ in $(seq 60); do
-    if curl -fsS --max-time 10 "https://github.com/$AGENCY_GITHUB_USER.keys" >>"$keys"; then break; fi
-    sleep 5
+ts_ok=0
+if [ "$unattended" = 0 ]; then
+  screen "4 of 5   Tailscale"
+  note "Tailscale lets you reach this machine from anywhere, and it is the only way in from outside your network. You sign in by scanning a QR code with your phone."
+  printf '\n'
+  if gum confirm --affirmative "Connect" --negative "Skip" "Connect to Tailscale now?"; then
+    mkdir -p "$ts_dir"
+    tailscaled --tun=userspace-networking --state="$ts_dir/tailscaled.state" \
+      --socket="$ts_dir/sock" >"$ts_dir/log" 2>&1 &
+    ts_pid=$!
+    sleep 3
+    printf '\n'
+    note "Scan the code, sign in, and approve the device. This screen continues by itself."
+    if tailscale --socket="$ts_dir/sock" up --qr --ssh --hostname="$AGENCY_HOSTNAME" --timeout=10m; then
+      ts_ok=1
+    else
+      note "Tailscale was not connected. You can do it after the install with: sudo tailscale up --ssh"
+      pause "Press Enter to continue."
+    fi
+    kill "$ts_pid" 2>/dev/null || true
+    wait "$ts_pid" 2>/dev/null || true
+    ts_pid=""
+  fi
+fi
+
+# ----------------------------------------------------------------- apps ---
+
+app_ids=()
+app_labels=()
+preselected=()
+declare -A app_kind app_npm
+while IFS=$'\t' read -r id sel kind npm label; do
+  app_ids+=("$id")
+  app_labels+=("$label")
+  app_kind[$id]=$kind
+  app_npm[$id]=$npm
+  if [ "$sel" = 1 ]; then preselected+=("$id"); fi
+done <"$AGENCY_APPS"
+
+chosen=("${preselected[@]}")
+if [ "$unattended" = 0 ]; then
+  options=()
+  selected=()
+  for i in "${!app_ids[@]}"; do
+    options+=("${app_labels[$i]}|${app_ids[$i]}")
+    for id in "${preselected[@]}"; do
+      if [ "$id" = "${app_ids[$i]}" ]; then selected+=("--selected=${app_labels[$i]}"); fi
+    done
   done
+  screen "5 of 5   apps"
+  note "Choose what to install. Space switches an item on or off, Enter confirms. Anything else can be added later."
+  printf '\n'
+  picked=$(gum choose --no-limit --height 14 --header "Apps" \
+    --cursor-prefix "[ ] " --selected-prefix "[x] " --unselected-prefix "[ ] " \
+    --label-delimiter "|" "${selected[@]}" "${options[@]}")
+  chosen=()
+  while read -r id; do
+    if [ -n "$id" ]; then chosen+=("$id"); fi
+  done <<<"$picked"
 fi
-grep -Eq '^(ssh-|ecdsa-|sk-)' "$keys" ||
-  stop "no SSH public key available. Add one to your GitHub account, or to 'sshKeys' in settings.nix, and check the network cable."
 
-# ------------------------------------------------------------- last call ---
-
-say "ALL DATA on $disk ($(lsblk -dno MODEL,SIZE "$disk" | tr -s ' ')) will be ERASED."
-if [ -n "$clear_old" ]; then
-  say "The earlier install on $clear_old ($(lsblk -dno MODEL,SIZE "$clear_old" | tr -s ' ')) will be ERASED too."
-fi
-say "To cancel, hold the power button now."
-for i in $(seq 30 -1 1); do
-  printf '\r[agency] erasing in %2d seconds ' "$i"
-  sleep 1
+chosen_system=()
+chosen_npm=()
+for id in "${chosen[@]}"; do
+  if [ "${app_kind[$id]:-}" = npm ]; then
+    chosen_npm+=("${app_npm[$id]}")
+  elif [ -n "${app_kind[$id]:-}" ]; then
+    chosen_system+=("$id")
+  fi
 done
-printf '\n'
+# Sorted ids, each followed by a space: the same form as AGENCY_BAKED_SYSTEM.
+system_list=$(printf '%s\n' "${chosen_system[@]}" | sed '/^$/d' | LC_ALL=C sort | tr '\n' ' ')
 
-# --------------------------------------------------------------- install ---
+# ------------------------------------------------------------ last call ---
+
+if [ "$unattended" = 1 ]; then
+  say "ALL DATA on $(describe "$disk") will be ERASED."
+  if [ -n "$clear_old" ]; then
+    say "The earlier install on $(describe "$clear_old") will be ERASED too."
+  fi
+  say "To cancel, hold the power button now."
+  for i in $(seq 30 -1 1); do
+    printf '\r[agency] erasing in %2d seconds ' "$i"
+    sleep 1
+  done
+  printf '\n'
+else
+  screen "ready"
+  printf 'Log in with   SSH keys of github.com/%s\n' "$gh_user"
+  if [ "$ts_ok" = 1 ]; then
+    printf 'Tailscale     connected as %s\n' "$AGENCY_HOSTNAME"
+  else
+    printf 'Tailscale     not set up\n'
+  fi
+  printf 'Apps          %s\n' "${chosen[*]:-none}"
+  printf 'Disk          %s\n\n' "$(describe "$disk")"
+  note "Everything on that disk will be erased."
+  if [ -n "$clear_old" ]; then
+    note "The earlier install on $(describe "$clear_old") will be erased as well."
+  fi
+  printf '\n'
+  if ! gum confirm --default=false --affirmative "Erase and install" --negative "Cancel" "Install now?"; then
+    note "Cancelled. Nothing was changed."
+    exit 1
+  fi
+  printf '\n'
+fi
+
+# -------------------------------------------------------------- install ---
+# From here on the disk is being changed.
 
 if [ -n "$clear_old" ]; then
   say "Clearing the earlier install on $clear_old ..."
@@ -150,50 +436,95 @@ fi
 
 # The disk layout refers to the target as /dev/agency-target.
 ln -sfn "$disk" /dev/agency-target
-
-say "Partitioning and formatting $disk ..."
 (umask 077 && head -c 32 /dev/urandom | base64 -w0 >"$luks_key")
-"$AGENCY_WIPE" --yes-wipe-all-disks
 
-say "Copying the system to disk (several minutes) ..."
-nixos-install --system "$AGENCY_SYSTEM" --no-root-passwd --no-channel-copy
+run "Partitioning and formatting the disk" "$AGENCY_WIPE" --yes-wipe-all-disks
+run "Copying the system to disk (several minutes)" \
+  nixos-install --system "$AGENCY_SYSTEM" --no-root-passwd --no-channel-copy
 
-say "Binding disk encryption to this machine's TPM ..."
-systemd-cryptenroll --unlock-key-file="$luks_key" --tpm2-device=auto --tpm2-pcrs=7 "$luks_part"
-# Add a recovery key, then remove the throwaway install key.
+# Bind the disk encryption to this machine's TPM so it starts unattended,
+# add a recovery key, then remove the throwaway install key.
+say "Setting up disk encryption ..."
 install -d -m 700 /mnt/root
-systemd-cryptenroll --unlock-key-file="$luks_key" --recovery-key --wipe-slot=password "$luks_part" \
-  >/mnt/root/luks-recovery-key.txt
+if ! {
+  systemd-cryptenroll --unlock-key-file="$luks_key" --tpm2-device=auto --tpm2-pcrs=7 "$luks_part" &&
+    systemd-cryptenroll --unlock-key-file="$luks_key" --recovery-key --wipe-slot=password "$luks_part" \
+      >/mnt/root/luks-recovery-key.txt
+} 2>"$log"; then
+  cat "$log"
+  say "Disk encryption setup failed. The disk has been erased; start again to retry."
+  pause "Press Enter."
+  exit 1
+fi
 chmod 600 /mnt/root/luks-recovery-key.txt
 rm -f "$luks_key"
 
-say "Installing SSH keys and a copy of this repo ..."
+# SSH keys, and a copy of this repo with the choices made above.
 install -D -m 644 "$keys" /mnt/etc/agency/authorized_keys
 mkdir -p /mnt/etc/nixos
 cp -rT "$AGENCY_SOURCE" /mnt/etc/nixos
 chmod -R u+w /mnt/etc/nixos
+apps_nix=""
+for id in "${chosen[@]}"; do apps_nix+="\"$id\" "; done
+sed -i -E \
+  -e "s|^  githubUser = .*|  githubUser = \"$gh_user\";|" \
+  -e "s|^  apps = .*|  apps = [ $apps_nix];|" \
+  /mnt/etc/nixos/settings.nix
+
+# Notes for the first start (see modules/firstboot.nix).
+notes=/mnt/var/lib/agency/firstboot
+install -d -m 700 /mnt/var/lib/agency "$notes"
+if [ "$system_list" != "$AGENCY_BAKED_SYSTEM" ]; then touch "$notes/rebuild"; fi
+if [ "${#chosen_npm[@]}" -gt 0 ]; then printf '%s\n' "${chosen_npm[@]}" >"$notes/npm-packages"; fi
+
+# Carry the Tailscale sign-in and any Wi-Fi network over to the new system.
+if [ "$ts_ok" = 1 ]; then
+  install -d -m 700 /mnt/var/lib/tailscale
+  install -m 600 "$ts_dir/tailscaled.state" /mnt/var/lib/tailscale/tailscaled.state
+fi
+if compgen -G "/etc/NetworkManager/system-connections/*" >/dev/null; then
+  install -d -m 700 /mnt/etc/NetworkManager/system-connections
+  cp -p /etc/NetworkManager/system-connections/* /mnt/etc/NetworkManager/system-connections/
+fi
 
 # Optional secrets stick: a second USB drive whose volume label is AGENCY.
 if [ -b "$stick" ]; then
-  say "Found the AGENCY secrets stick."
   mkdir -p /run/agency-stick
   if mount "$stick" /run/agency-stick; then
-    if [ -f /run/agency-stick/tailscale-authkey ]; then
-      install -d -m 700 /mnt/var/lib/agency
+    if [ "$ts_ok" = 0 ] && [ -f /run/agency-stick/tailscale-authkey ]; then
       tr -d '[:space:]' </run/agency-stick/tailscale-authkey >/mnt/var/lib/agency/tailscale-authkey
       chmod 600 /mnt/var/lib/agency/tailscale-authkey
-      say "Tailscale key copied; the machine joins your tailnet on first boot."
+      say "Tailscale key copied; the machine joins your tailnet on first start."
     fi
     cp /mnt/root/luks-recovery-key.txt /run/agency-stick/luks-recovery-key.txt &&
-      say "Disk recovery key saved to the stick as luks-recovery-key.txt."
+      say "Disk recovery key saved to the AGENCY stick."
     umount /run/agency-stick || true
   fi
 fi
-
 sync
-say "Done. Disk recovery key (also in /root/luks-recovery-key.txt on the new system):"
-cat /mnt/root/luks-recovery-key.txt
-printf '\n'
-say "Remove the USB stick. Rebooting in 20 seconds."
-sleep 20
+
+# ----------------------------------------------------------------- done ---
+
+recovery=$(cat /mnt/root/luks-recovery-key.txt)
+
+if [ "$unattended" = 1 ]; then
+  say "Done. Disk recovery key (also in /root/luks-recovery-key.txt on the new system):"
+  printf '%s\n' "$recovery"
+  say "Remove the USB stick. Rebooting in 20 seconds."
+  sleep 20
+else
+  screen "done"
+  printf 'On the same network    ssh %s@%s.local\n' "$AGENCY_USER" "$AGENCY_HOSTNAME"
+  if [ "$ts_ok" = 1 ]; then
+    printf 'From anywhere          ssh %s@%s\n' "$AGENCY_USER" "$AGENCY_HOSTNAME"
+  fi
+  printf '\n'
+  note "The apps you chose finish installing in the background after the first start. That can take ten minutes."
+  printf '\n'
+  note "Disk recovery key. It unlocks the disk if the TPM ever refuses to. Save it now; scanning the code copies it to your phone."
+  printf '\n%s\n\n' "$recovery"
+  qrencode -t UTF8 -m 2 "$recovery" || true
+  printf '\n'
+  pause "Remove the USB stick, then press Enter to restart."
+fi
 systemctl reboot

@@ -16,22 +16,21 @@ If an agent breaks the system, reboot and pick yesterday's version from the boot
 ## Install
 
 1. Make sure your GitHub account has an SSH key on it, because that's how you'll log in.
-2. Download the ISO from **Actions → Build installer ISO** and flash it to a USB stick.
-3. In the BIOS, turn Secure Boot off and TPM on, then plug in Ethernet.
-4. Boot the stick. It wipes the internal disk and installs on its own, so don't boot it on a machine you care about.
+2. Download the ISO from **Actions → Build installer ISO** and flash it to a USB stick. In Rufus, pick DD mode.
+3. In the BIOS, turn Secure Boot off and TPM on.
+4. Boot the stick and answer five questions: network, your GitHub username, which disk to erase, Tailscale, and which apps you want. Tailscale sign-in is a QR code you scan with your phone.
 
-Once it has rebooted:
+It installs, restarts, and you're in:
 
 ```sh
-ssh agent@agency.local
-sudo tailscale up --ssh
+ssh agent@agency
 ```
 
-[docs/install.md](docs/install.md) covers what the installer checks before it wipes anything, and how to skip the SSH step entirely.
+[docs/install.md](docs/install.md) has the details, including how to make a stick that asks nothing.
 
 ## Use
 
-Install whichever agent CLI you like and point it at [AGENTS.md](AGENTS.md), which tells it how the machine works and what's left to set up.
+Start one of the agents you picked and point it at [AGENTS.md](AGENTS.md), which tells it how the machine works and what's left to set up.
 
 ```sh
 gui chromium                                   # open an app on the agents' desktop

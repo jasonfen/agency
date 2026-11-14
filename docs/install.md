@@ -2,41 +2,60 @@
 
 ## What you need
 
-- An x86-64 laptop or PC with UEFI and TPM 2.0, a USB stick (8 GB or more), a wired network connection.
-- An SSH key on the GitHub account named in `settings.nix`. The installer fetches the public keys from `github.com/<githubUser>.keys`. Password login is disabled.
+- An x86-64 laptop or PC with UEFI and TPM 2.0.
+- A USB stick, 8 GB or more.
+- Internet during the install. A cable is easiest; the wizard can also join Wi-Fi.
+- A GitHub account with an SSH key on it. Password login is disabled, and the machine accepts the keys from `github.com/<you>.keys`.
 
-## What the installer does
+Flash the ISO with balenaEtcher or `dd`. In Rufus, choose **DD Image mode** when it asks; its ISO mode produces a stick that fails to boot.
 
-1. Checks the machine (see below).
-2. Counts down 30 seconds. Holding the power button cancels.
-3. Erases the internal disk and creates an encrypted btrfs volume. It takes the NVMe disk, or the SATA disk if there is no NVMe. The disk's model and size are shown during the countdown.
-4. Copies the prebuilt system from the stick. Nothing is downloaded except your SSH keys.
-5. Binds the disk encryption to the TPM, so the machine boots unattended.
-6. Reboots.
+## The wizard
 
-## When it stops
+The stick boots into a setup wizard on the laptop's own screen. It asks five things:
 
-The installer stops before touching the disk if:
+1. **Network.** If there is no connection it offers to join Wi-Fi.
+2. **Who can log in.** Your GitHub username.
+3. **Disk.** Pick the disk to erase from a list showing size and model.
+4. **Tailscale.** Optional. A QR code appears; scan it with your phone and approve the device. The sign-in is carried over to the installed system.
+5. **Apps.** Pick agents (Claude Code, Codex and others) and tools (browser, Docker and so on). The list comes from [`apps.nix`](../apps.nix).
 
-- `vendorMatch` is set in `settings.nix` and the machine's vendor doesn't match
-- the machine has two disks of the same kind and none is named in `settings.nix` (it lists them; pick one with `sudo agency-install --disk /dev/NAME`)
-- the disk already has an agency install, so a stick left plugged in can't reinstall in a loop
-- there is no TPM 2.0, or the machine booted in legacy mode
-- it found no SSH public key
+Then it shows a summary and asks once more before erasing anything. Cancel, Ctrl-C or a failed check brings up a menu to start again, open a shell, or power off.
 
-`sudo agency-install --force`, from the shell on Alt+F2, skips the vendor and already-installed checks. If the earlier install is on a different disk from the new target, `--force` erases that one as well.
+After the install it shows the disk recovery key as text and as a QR code. Save it.
 
-By default there is no vendor check: the stick installs on any machine it boots, after the countdown. Label it.
+## After the first start
 
-## Joining Tailscale without logging in
+The stick carries a prebuilt system, so apps you added in the wizard are installed in the background the first time the machine starts. That can take ten minutes. Watch it with:
 
-Format a second stick as FAT with the label `AGENCY`. Put a one-time Tailscale auth key on it in a file named `tailscale-authkey`. Boot with both sticks plugged in. The machine joins your tailnet on first boot, and the installer also saves the disk recovery key to that stick.
+```sh
+journalctl -fu agency-firstboot
+```
 
-## Disk recovery key
+## A stick that asks nothing
 
-It is printed at the end of the install and saved to `/root/luks-recovery-key.txt`. Move it to a password manager and delete the file.
+Fork the repo and edit `settings.nix`:
+
+```nix
+githubUser = "you";
+apps = [ "chromium" "docker" "claude-code" ];
+unattended = true;
+```
+
+Push, and GitHub Actions builds your ISO. It boots, counts down 30 seconds, erases the disk and installs. Holding the power button during the countdown cancels.
+
+Unattended installs choose the NVMe disk, or the SATA disk if there is no NVMe. They stop without touching anything if:
+
+- `vendorMatch` is set and the machine's vendor doesn't match
+- the machine already has an agency install, so a stick left plugged in can't reinstall in a loop
+- there are two disks of the same kind and none is named in `settings.nix`
+- no SSH public key was found
+
+`sudo agency-install --unattended --force`, from the shell on Alt+F2, skips the first two checks. If the earlier install is on a different disk from the new target, `--force` erases that one as well. A stick like this installs on any machine it boots, so label it.
+
+To join Tailscale unattended, format a second stick as FAT with the label `AGENCY` and put a one-time auth key on it in a file named `tailscale-authkey`. The installer also saves the disk recovery key to that stick.
 
 ## Limits
 
-- Secure Boot is off. TPM unlock protects the data if the disk is removed, but not if someone boots another OS on the laptop.
+- Secure Boot must be off. TPM unlock protects the data if the disk is removed, but not if someone boots another OS on the machine.
+- The disk recovery key is also saved to `/root/luks-recovery-key.txt`. Move it to a password manager and delete the file.
 - The remaining setup work is listed in [AGENTS.md](../AGENTS.md).

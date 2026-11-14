@@ -5,6 +5,8 @@
     ./hardware.nix # what the laptop is made of
     ./disko.nix # how the disk is laid out
     ../../modules/agents.nix # the agent account and its tools
+    ../../modules/apps.nix # optional software chosen in settings.nix
+    ../../modules/firstboot.nix # finishes the installer's choices on first boot
     ../../modules/remote.nix # how you and agents reach the machine
     ../../modules/desktop.nix # the virtual desktop for GUI apps
     ../../modules/laptop.nix # run lid-closed, never sleep

@@ -11,7 +11,6 @@
     extraGroups = [
       "wheel"
       "networkmanager"
-      "docker"
       "video"
       "audio"
       "dialout"
@@ -22,15 +21,13 @@
   };
   security.sudo.wheelNeedsPassword = false;
 
-  # Agents download prebuilt programs constantly. These three settings make
+  # Agents download prebuilt programs constantly. These two settings make
   # the usual kinds run on NixOS without per-program fixes:
   programs.nix-ld.enable = true; # generic Linux binaries
   programs.appimage = {
     enable = true; # AppImages
     binfmt = true;
   };
-  virtualisation.docker.enable = true; # containers
-  # For anything that still refuses: `distrobox create -i ubuntu:24.04`.
 
   # `npm install -g` and `pip install --user` land in the home directory,
   # so agent CLIs install and update themselves without a system rebuild.
@@ -69,7 +66,6 @@
     btrfs-progs
     pciutils
     usbutils
-    distrobox
   ];
 
   # When memory runs out, stop the process group that is using the most
