@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>agency setup</title>
+  <link rel="icon" href="data:,">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <!-- The pixel shapes used across the screen: the pointer from the logo,
+       and a tick drawn on the same grid. -->
+  <svg width="0" height="0" aria-hidden="true" style="position:absolute">
+    <symbol id="pointer" viewBox="0 0 54 81">
+      <path class="pointer-tip" d="M0 0h9v9h-9z"/>
+      <path d="M0 9h18v9h-18zM0 18h27v9h-27zM0 27h36v9h-36zM0 36h45v9h-45zM0 45h54v9h-54zM0 54h36v9h-36zM0 63h9v9h-9zM27 63h18v9h-18zM36 72h18v9h-18z"/>
+    </symbol>
+    <symbol id="tick" viewBox="0 0 54 45">
+      <path d="M45 0h9v9h-9zM36 9h9v9h-9zM45 9h9v9h-9zM27 18h9v9h-9zM36 18h9v9h-9zM0 18h9v9h-9zM18 27h9v9h-9zM27 27h9v9h-9zM0 27h9v9h-9zM9 27h9v9h-9zM9 36h9v9h-9zM18 36h9v9h-9z"/>
+    </symbol>
+  </svg>
+
+  <header class="bar">
+    <div class="brand">
+      <svg class="brand-mark"><use href="#pointer"/></svg>
+      <span class="brand-name">agency</span>
+    </div>
+    <p class="bar-note" id="bar-note"></p>
+  </header>
+
+  <main class="frame">
+    <nav class="rail" aria-label="Setup steps">
+      <ol id="rail"></ol>
+    </nav>
+    <section class="stage" id="stage" aria-live="polite"></section>
+  </main>
+
+  <footer class="actions" id="actions"></footer>
+
+  <script src="app.js"></script>
+</body>
+</html>

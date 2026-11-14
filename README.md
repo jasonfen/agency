@@ -18,7 +18,7 @@ If an agent breaks the system, reboot and pick yesterday's version from the boot
 1. Make sure your GitHub account has an SSH key on it, because that's how you'll log in.
 2. Download the ISO from **Actions → Build installer ISO** and flash it to a USB stick. In Rufus, pick DD mode.
 3. In the BIOS, turn Secure Boot off and TPM on.
-4. Boot the stick and answer five questions: network, your GitHub username, which disk to erase, Tailscale, and which apps you want. Tailscale sign-in is a QR code you scan with your phone.
+4. Boot the stick. A setup screen walks you through the network, your GitHub username, which disk to erase, Tailscale, and which apps you want. Tailscale sign-in is a QR code you scan with your phone.
 
 It installs, restarts, and you're in:
 

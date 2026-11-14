@@ -1,16 +1,24 @@
-# The installer. It runs when the USB stick boots.
+# The installer. Everything that changes the disk happens in this script.
 #
-# Two modes:
-#   wizard      (default) asks a few questions on screen, then installs
-#   unattended  installs with the values baked in from settings.nix
+# It has three front ends:
+#   setup screen  the graphical screen (installer/ui) collects the answers
+#                 and runs this script with them as options
+#   text wizard   asks the same questions in the terminal; the fallback
+#                 when the graphical screen cannot start
+#   unattended    no questions; uses the values baked in from settings.nix
 #
-# In both, every check and every question comes BEFORE the disk is touched.
+# In all three, every check and every question comes BEFORE the disk is
+# touched.
 #
-# Options, for a human at the installer's shell (Alt+F2):
-#   --unattended          no questions
-#   --github-user NAME    whose SSH keys to install (unattended)
-#   --disk /dev/NAME      which disk to erase
-#   --force               unattended: skip the vendor and already-installed checks
+# Options:
+#   --unattended            no questions
+#   --github-user NAME      whose SSH keys to install
+#   --disk /dev/NAME        which disk to erase
+#   --apps "ID ID ..."      which apps from apps.nix to install
+#   --tailscale-state FILE  a saved Tailscale sign-in to carry over
+#   --force                 skip the vendor and already-installed checks
+#   --yes                   skip the 30 second countdown
+#   --no-reboot             stop after installing; do not restart
 #
 # Filled in from settings.nix and apps.nix by installer/default.nix:
 #   AGENCY_HOSTNAME AGENCY_USER AGENCY_UNATTENDED AGENCY_DISK AGENCY_VENDOR
@@ -27,6 +35,11 @@ unattended=$AGENCY_UNATTENDED
 force=0
 disk=$AGENCY_DISK
 gh_user=$AGENCY_GITHUB_USER
+apps_arg=""
+apps_given=0
+ts_state=""
+countdown=1
+reboot=1
 args=("$@")
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -40,8 +53,19 @@ while [ $# -gt 0 ]; do
       gh_user=${2:-}
       shift
       ;;
+    --apps)
+      apps_arg=${2:-}
+      apps_given=1
+      shift
+      ;;
+    --tailscale-state)
+      ts_state=${2:-}
+      shift
+      ;;
+    --yes) countdown=0 ;;
+    --no-reboot) reboot=0 ;;
     *)
-      echo "usage: agency-install [--unattended] [--github-user NAME] [--disk /dev/NAME] [--force]"
+      echo "usage: agency-install [--unattended] [--github-user NAME] [--disk /dev/NAME] [--apps \"ID ...\"] [--force]"
       exit 2
       ;;
   esac
@@ -65,7 +89,7 @@ if [ "$unattended" = 0 ] && [ "${AGENCY_STAGE:-}" != wizard ]; then
   while true; do
     if AGENCY_STAGE=wizard "$0" "${args[@]}"; then exit 0; fi
     printf '\n'
-    choice=$(gum choose --header "Setup stopped. Nothing is lost by starting again." \
+    choice=$(gum choose --no-show-help --header "Setup stopped. Nothing is lost by starting again." \
       "Start again" "Open a shell" "Power off") || choice="Open a shell"
     case "$choice" in
       "Start again") ;;
@@ -105,11 +129,12 @@ stop() {
   exit 1
 }
 
-# Start a wizard screen: clear, then a title.
+# Start a wizard screen: clear, then a title. Plain ASCII only: the text
+# console cannot draw box characters reliably.
 screen() {
   printf '\033[2J\033[H'
-  gum style --border normal --border-foreground 2 --padding "0 2" --bold "agency setup   $1"
-  printf '\n'
+  gum style --foreground 2 --bold "agency setup   $1"
+  printf -- '----------------------------------------\n\n'
 }
 
 # Run a long command. The wizard shows a spinner and prints the command's
@@ -170,8 +195,8 @@ wifi_setup() {
     return 0
   fi
   local ssid pass
-  ssid=$(gum choose --header "Wi-Fi network" "${ssids[@]}")
-  pass=$(gum input --password --header "Password for $ssid (leave empty if it has none)" --placeholder "")
+  ssid=$(gum choose --no-show-help --header "Wi-Fi network" "${ssids[@]}")
+  pass=$(gum input --no-show-help --password --header "Password for $ssid (leave empty if it has none)" --placeholder "")
   if [ -n "$pass" ]; then
     nmcli device wifi connect "$ssid" password "$pass" || true
   else
@@ -187,7 +212,7 @@ else
   note "Checking the internet connection ..."
   until wait_online 6; do
     screen "1 of 5   network"
-    choice=$(gum choose --header "No internet connection yet. A network cable is the easiest fix." \
+    choice=$(gum choose --no-show-help --header "No internet connection yet. A network cable is the easiest fix." \
       "Check again" "Set up Wi-Fi")
     if [ "$choice" = "Set up Wi-Fi" ]; then wifi_setup; fi
   done
@@ -220,7 +245,7 @@ else
     screen "2 of 5   who can log in"
     note "There is no password login. The machine accepts the SSH keys that are on a GitHub account, so type the account to use."
     printf '\n'
-    gh_user=$(gum input --header "GitHub username" --placeholder "your-username" --value "$gh_user")
+    gh_user=$(gum input --no-show-help --header "GitHub username" --placeholder "your-username" --value "$gh_user")
     if ! valid_user "$gh_user"; then
       note "That doesn't look like a GitHub username."
     elif fetch_keys "$gh_user"; then
@@ -280,7 +305,7 @@ if [ -z "$disk" ]; then
     screen "3 of 5   disk"
     note "Choose the disk to install on. Everything on it will be erased, but not yet: you confirm at the end."
     printf '\n'
-    disk=$(gum choose --header "Disk" --label-delimiter "|" "${options[@]}")
+    disk=$(gum choose --no-show-help --header "Disk" --label-delimiter "|" "${options[@]}")
   fi
 fi
 if [ -z "$disk" ] || [ ! -b "$disk" ]; then
@@ -315,12 +340,11 @@ if [ -n "$old_disk" ] && [ "$old_disk" != "$disk" ]; then clear_old=$old_disk; f
 # Sign in here, then carry the sign-in over to the installed system, so the
 # machine is on the tailnet from its first start.
 
-ts_ok=0
 if [ "$unattended" = 0 ]; then
   screen "4 of 5   Tailscale"
   note "Tailscale lets you reach this machine from anywhere, and it is the only way in from outside your network. You sign in by scanning a QR code with your phone."
   printf '\n'
-  if gum confirm --affirmative "Connect" --negative "Skip" "Connect to Tailscale now?"; then
+  if gum confirm --no-show-help --affirmative "Connect" --negative "Skip" "Connect to Tailscale now?"; then
     mkdir -p "$ts_dir"
     tailscaled --tun=userspace-networking --state="$ts_dir/tailscaled.state" \
       --socket="$ts_dir/sock" >"$ts_dir/log" 2>&1 &
@@ -329,7 +353,7 @@ if [ "$unattended" = 0 ]; then
     printf '\n'
     note "Scan the code, sign in, and approve the device. This screen continues by itself."
     if tailscale --socket="$ts_dir/sock" up --qr --ssh --hostname="$AGENCY_HOSTNAME" --timeout=10m; then
-      ts_ok=1
+      ts_state=$ts_dir/tailscaled.state
     else
       note "Tailscale was not connected. You can do it after the install with: sudo tailscale up --ssh"
       pause "Press Enter to continue."
@@ -339,6 +363,9 @@ if [ "$unattended" = 0 ]; then
     ts_pid=""
   fi
 fi
+
+ts_ok=0
+if [ -n "$ts_state" ] && [ -f "$ts_state" ]; then ts_ok=1; fi
 
 # ----------------------------------------------------------------- apps ---
 
@@ -355,6 +382,9 @@ while IFS=$'\t' read -r id sel kind npm label; do
 done <"$AGENCY_APPS"
 
 chosen=("${preselected[@]}")
+if [ "$apps_given" = 1 ]; then
+  read -r -a chosen <<<"$apps_arg"
+fi
 if [ "$unattended" = 0 ]; then
   options=()
   selected=()
@@ -367,7 +397,7 @@ if [ "$unattended" = 0 ]; then
   screen "5 of 5   apps"
   note "Choose what to install. Space switches an item on or off, Enter confirms. Anything else can be added later."
   printf '\n'
-  picked=$(gum choose --no-limit --height 14 --header "Apps" \
+  picked=$(gum choose --no-show-help --no-limit --height 14 --header "Apps" \
     --cursor-prefix "[ ] " --selected-prefix "[x] " --unselected-prefix "[ ] " \
     --label-delimiter "|" "${selected[@]}" "${options[@]}")
   chosen=()
@@ -376,14 +406,20 @@ if [ "$unattended" = 0 ]; then
   done <<<"$picked"
 fi
 
+# Sort the choice into the two kinds, dropping any id not in the catalog.
+picked_ids=("${chosen[@]}")
+chosen=()
 chosen_system=()
 chosen_npm=()
-for id in "${chosen[@]}"; do
+for id in "${picked_ids[@]}"; do
   if [ "${app_kind[$id]:-}" = npm ]; then
     chosen_npm+=("${app_npm[$id]}")
   elif [ -n "${app_kind[$id]:-}" ]; then
     chosen_system+=("$id")
+  else
+    continue
   fi
+  chosen+=("$id")
 done
 # Sorted ids, each followed by a space: the same form as AGENCY_BAKED_SYSTEM.
 system_list=$(printf '%s\n' "${chosen_system[@]}" | sed '/^$/d' | LC_ALL=C sort | tr '\n' ' ')
@@ -395,12 +431,14 @@ if [ "$unattended" = 1 ]; then
   if [ -n "$clear_old" ]; then
     say "The earlier install on $(describe "$clear_old") will be ERASED too."
   fi
-  say "To cancel, hold the power button now."
-  for i in $(seq 30 -1 1); do
-    printf '\r[agency] erasing in %2d seconds ' "$i"
-    sleep 1
-  done
-  printf '\n'
+  if [ "$countdown" = 1 ]; then
+    say "To cancel, hold the power button now."
+    for i in $(seq 30 -1 1); do
+      printf '\r[agency] erasing in %2d seconds ' "$i"
+      sleep 1
+    done
+    printf '\n'
+  fi
 else
   screen "ready"
   printf 'Log in with   SSH keys of github.com/%s\n' "$gh_user"
@@ -416,7 +454,7 @@ else
     note "The earlier install on $(describe "$clear_old") will be erased as well."
   fi
   printf '\n'
-  if ! gum confirm --default=false --affirmative "Erase and install" --negative "Cancel" "Install now?"; then
+  if ! gum confirm --no-show-help --default=false --affirmative "Erase and install" --negative "Cancel" "Install now?"; then
     note "Cancelled. Nothing was changed."
     exit 1
   fi
@@ -460,6 +498,7 @@ chmod 600 /mnt/root/luks-recovery-key.txt
 rm -f "$luks_key"
 
 # SSH keys, and a copy of this repo with the choices made above.
+say "Finishing up ..."
 install -D -m 644 "$keys" /mnt/etc/agency/authorized_keys
 mkdir -p /mnt/etc/nixos
 cp -rT "$AGENCY_SOURCE" /mnt/etc/nixos
@@ -480,7 +519,7 @@ if [ "${#chosen_npm[@]}" -gt 0 ]; then printf '%s\n' "${chosen_npm[@]}" >"$notes
 # Carry the Tailscale sign-in and any Wi-Fi network over to the new system.
 if [ "$ts_ok" = 1 ]; then
   install -d -m 700 /mnt/var/lib/tailscale
-  install -m 600 "$ts_dir/tailscaled.state" /mnt/var/lib/tailscale/tailscaled.state
+  install -m 600 "$ts_state" /mnt/var/lib/tailscale/tailscaled.state
 fi
 if compgen -G "/etc/NetworkManager/system-connections/*" >/dev/null; then
   install -d -m 700 /mnt/etc/NetworkManager/system-connections
@@ -510,6 +549,7 @@ recovery=$(cat /mnt/root/luks-recovery-key.txt)
 if [ "$unattended" = 1 ]; then
   say "Done. Disk recovery key (also in /root/luks-recovery-key.txt on the new system):"
   printf '%s\n' "$recovery"
+  if [ "$reboot" = 0 ]; then exit 0; fi
   say "Remove the USB stick. Rebooting in 20 seconds."
   sleep 20
 else

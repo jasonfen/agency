@@ -1,5 +1,13 @@
-# The USB installer. It is the standard NixOS minimal installer plus one
-# service that runs installer/agency-install.sh as soon as it boots.
+# The USB installer: the standard NixOS minimal installer, plus a setup
+# screen that starts as soon as the stick has booted.
+#
+#   installer/ui/            the setup screen (a web page)
+#   installer/server.py      what the page talks to; runs on localhost only
+#   installer/agency-install.sh   does the install; also a text wizard
+#
+# The stick boots into a kiosk: one fullscreen browser window showing the
+# setup screen, with no desktop around it. If the kiosk cannot start (no
+# usable graphics), the text wizard takes over the same console.
 #
 # The finished system is built in advance and stored on the stick, so the
 # install itself copies files and downloads nothing but your SSH public keys.
@@ -15,7 +23,7 @@
 let
   target = self.nixosConfigurations.${settings.hostName}.config;
 
-  # The app catalog as a plain table the installer script can read.
+  # The app catalog as a plain table the installer can read.
   catalog = import ../apps.nix { inherit pkgs settings; };
   isOn = app: lib.elem app.id settings.apps;
   appsTable = pkgs.writeText "apps.tsv" (
@@ -32,30 +40,32 @@ let
     ) catalog
   );
   # Sorted ids of the system apps in the prebuilt system, each followed by a
-  # space. The installer compares the wizard's choice with this to decide
+  # space. The installer compares the chosen apps with this to decide
   # whether the new machine must rebuild itself on first start.
   bakedSystem = lib.concatMapStrings (id: id + " ") (
     lib.sort lib.lessThan (map (app: app.id) (lib.filter (app: !(app ? npm) && isOn app) catalog))
   );
 
+  tools = [
+    config.system.build.nixos-install
+    config.nix.package
+    config.systemd.package
+    pkgs.bashInteractive
+    pkgs.coreutils
+    pkgs.util-linux
+    pkgs.curl
+    pkgs.gnugrep
+    pkgs.gnused
+    pkgs.gawk
+    pkgs.gum
+    pkgs.qrencode
+    pkgs.networkmanager
+    pkgs.tailscale
+  ];
+
   agency-install = pkgs.writeShellApplication {
     name = "agency-install";
-    runtimeInputs = [
-      config.system.build.nixos-install
-      config.nix.package
-      config.systemd.package
-      pkgs.bashInteractive
-      pkgs.coreutils
-      pkgs.util-linux
-      pkgs.curl
-      pkgs.gnugrep
-      pkgs.gnused
-      pkgs.gawk
-      pkgs.gum
-      pkgs.qrencode
-      pkgs.networkmanager
-      pkgs.tailscale
-    ];
+    runtimeInputs = tools;
     text = ''
       export AGENCY_HOSTNAME=${lib.escapeShellArg settings.hostName}
       export AGENCY_USER=${lib.escapeShellArg settings.user}
@@ -73,34 +83,28 @@ let
       ${builtins.readFile ./agency-install.sh}
     '';
   };
-in
-{
-  imports = [ (modulesPath + "/installer/cd-dvd/installation-cd-minimal.nix") ];
 
-  nixpkgs.hostPlatform = "x86_64-linux";
-  image.baseName = lib.mkForce "${settings.hostName}-installer";
+  port = "7373";
 
-  # Put the prebuilt system on the stick.
-  isoImage.storeContents = [ target.system.build.toplevel ];
+  # The kiosk's one program: wait for the server, then show the page.
+  kiosk = pkgs.writeShellScript "agency-kiosk" ''
+    for _ in $(${pkgs.coreutils}/bin/seq 60); do
+      ${pkgs.curl}/bin/curl -fs -o /dev/null http://127.0.0.1:${port}/ && break
+      ${pkgs.coreutils}/bin/sleep 0.5
+    done
+    exec ${pkgs.chromium}/bin/chromium \
+      --kiosk --app=http://127.0.0.1:${port}/ \
+      --ozone-platform=wayland --disable-gpu \
+      --user-data-dir=/tmp/agency-kiosk \
+      --no-first-run --noerrdialogs --disable-translate \
+      --disable-features=Translate --disable-pinch \
+      --overscroll-history-navigation=0
+  '';
 
-  environment.systemPackages = [ agency-install ];
-
-  # A larger console font, so the wizard and its QR codes are readable on a
-  # high-resolution laptop screen, and a quiet kernel so it stays readable.
-  console = {
-    earlySetup = true;
-    font = "ter-v24n";
-    packages = [ pkgs.terminus_font ];
-  };
-  boot.kernelParams = [
-    "quiet"
-    "loglevel=3"
-  ];
-
-  # Run the installer on the first console as soon as the stick has booted.
-  systemd.services.agency-autoinstall = {
-    description = "Install ${settings.hostName}";
-    wantedBy = [ "multi-user.target" ];
+  # The text wizard on the first console. Used for unattended sticks, and as
+  # the fallback when the kiosk stops.
+  textInstaller = {
+    description = "Install ${settings.hostName} (text)";
     after = [
       "NetworkManager.service"
       "systemd-user-sessions.service"
@@ -118,4 +122,72 @@ in
       TimeoutStartSec = "infinity";
     };
   };
+in
+{
+  imports = [ (modulesPath + "/installer/cd-dvd/installation-cd-minimal.nix") ];
+
+  config = lib.mkMerge [
+    {
+      nixpkgs.hostPlatform = "x86_64-linux";
+      image.baseName = lib.mkForce "${settings.hostName}-installer";
+
+      # Put the prebuilt system on the stick.
+      isoImage.storeContents = [ target.system.build.toplevel ];
+
+      environment.systemPackages = [ agency-install ];
+
+      boot.kernelParams = [
+        "quiet"
+        "loglevel=3"
+      ];
+    }
+
+    # An unattended stick asks nothing, so it needs no screen: run the
+    # installer on the console as soon as the stick has booted.
+    (lib.mkIf settings.unattended {
+      systemd.services.agency-text = textInstaller // {
+        wantedBy = [ "multi-user.target" ];
+      };
+    })
+
+    # Otherwise: the setup screen.
+    (lib.mkIf (!settings.unattended) {
+      systemd.services.agency-setup-server = {
+        description = "Backend for the setup screen";
+        wantedBy = [ "multi-user.target" ];
+        before = [ "cage-tty1.service" ];
+        path = tools ++ [ agency-install ];
+        environment = {
+          HOME = "/root";
+          AGENCY_UI = "${./ui}";
+          AGENCY_HOSTNAME = settings.hostName;
+          AGENCY_USER = settings.user;
+          AGENCY_GITHUB_USER = settings.githubUser;
+          AGENCY_APPS = "${appsTable}";
+          AGENCY_SYSTEM = "${target.system.build.toplevel}";
+        };
+        serviceConfig = {
+          ExecStart = "${pkgs.python3}/bin/python3 ${./server.py}";
+          Restart = "always";
+        };
+      };
+
+      # cage shows one program fullscreen. "-s" keeps Ctrl+Alt+F2 working,
+      # and the pixman renderer needs no graphics driver beyond a screen.
+      services.cage = {
+        enable = true;
+        user = "nixos";
+        program = kiosk;
+        extraArguments = [ "-s" ];
+        environment.WLR_RENDERER = "pixman";
+      };
+
+      # If the kiosk stops for any reason, fall back to the text wizard.
+      systemd.services."cage-tty1".unitConfig = {
+        OnFailure = [ "agency-text.service" ];
+        OnSuccess = [ "agency-text.service" ];
+      };
+      systemd.services.agency-text = textInstaller;
+    })
+  ];
 }

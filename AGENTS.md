@@ -83,7 +83,7 @@ the browser profile persists, so you stay signed in afterwards.
 | `modules/remote.nix` | SSH, Tailscale, firewall |
 | `modules/desktop.nix` | The virtual desktop |
 | `modules/laptop.nix` | Lid, sleep, thermals |
-| `installer/` | The self-installing USB image |
+| `installer/` | The USB installer: setup screen (`ui/`), its backend (`server.py`), and the install script |
 
 ## Facts about this machine
 

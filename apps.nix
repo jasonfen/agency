@@ -21,11 +21,6 @@
     npm = "@openai/codex";
   }
   {
-    id = "gemini-cli";
-    label = "Gemini CLI";
-    npm = "@google/gemini-cli";
-  }
-  {
     id = "opencode";
     label = "OpenCode";
     npm = "opencode-ai";

@@ -9,9 +9,9 @@
 
 Flash the ISO with balenaEtcher or `dd`. In Rufus, choose **DD Image mode** when it asks; its ISO mode produces a stick that fails to boot.
 
-## The wizard
+## The setup screen
 
-The stick boots into a setup wizard on the laptop's own screen. It asks five things:
+The stick boots into a setup screen on the laptop's own display. It works with the keyboard alone (Tab, arrows, Space, Enter) or with a mouse. It asks five things:
 
 1. **Network.** If there is no connection it offers to join Wi-Fi.
 2. **Who can log in.** Your GitHub username.
@@ -19,9 +19,11 @@ The stick boots into a setup wizard on the laptop's own screen. It asks five thi
 4. **Tailscale.** Optional. A QR code appears; scan it with your phone and approve the device. The sign-in is carried over to the installed system.
 5. **Apps.** Pick agents (Claude Code, Codex and others) and tools (browser, Docker and so on). The list comes from [`apps.nix`](../apps.nix).
 
-Then it shows a summary and asks once more before erasing anything. Cancel, Ctrl-C or a failed check brings up a menu to start again, open a shell, or power off.
+Then it shows a summary. Nothing is erased until you press **Erase disk and install** there; that button never responds to Enter by accident.
 
 After the install it shows the disk recovery key as text and as a QR code. Save it.
+
+If the screen cannot start, for example on a machine whose graphics the installer does not support, the same questions appear as a text wizard. You can also reach a shell with Ctrl+Alt+F2 and run `sudo agency-install` yourself.
 
 ## After the first start
 

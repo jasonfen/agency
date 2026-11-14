@@ -1,0 +1,240 @@
+/* agency setup: design tokens first, then components.
+   Everything sits on a pixel grid taken from the logo: square corners,
+   hard edges, and one unit (--u) that all spacing is a multiple of. */
+
+@font-face { font-family: "Pixelify Sans"; font-weight: 500; src: url(fonts/pixelify-sans-latin-500-normal.woff2) format("woff2"); }
+@font-face { font-family: "Pixelify Sans"; font-weight: 700; src: url(fonts/pixelify-sans-latin-700-normal.woff2) format("woff2"); }
+@font-face { font-family: "IBM Plex Sans"; font-weight: 400; src: url(fonts/ibm-plex-sans-latin-400-normal.woff2) format("woff2"); }
+@font-face { font-family: "IBM Plex Sans"; font-weight: 500; src: url(fonts/ibm-plex-sans-latin-500-normal.woff2) format("woff2"); }
+@font-face { font-family: "IBM Plex Sans"; font-weight: 600; src: url(fonts/ibm-plex-sans-latin-600-normal.woff2) format("woff2"); }
+@font-face { font-family: "IBM Plex Mono"; font-weight: 400; src: url(fonts/ibm-plex-mono-latin-400-normal.woff2) format("woff2"); }
+@font-face { font-family: "IBM Plex Mono"; font-weight: 500; src: url(fonts/ibm-plex-mono-latin-500-normal.woff2) format("woff2"); }
+
+:root {
+  /* Color */
+  --canvas: #eef1ec;
+  --surface: #ffffff;
+  --ink: #15201a;
+  --muted: #56655c;
+  --line: #c6d0c8;
+  --accent: #1f8a4c;
+  --accent-strong: #136637;
+  --accent-soft: #dcefe2;
+  --danger: #b42318;
+  --danger-soft: #fbe9e7;
+
+  /* Type */
+  --font-display: "Pixelify Sans", sans-serif;
+  --font-body: "IBM Plex Sans", system-ui, sans-serif;
+  --font-code: "IBM Plex Mono", ui-monospace, monospace;
+  --text-s: 0.875rem;
+  --text-m: 1rem;
+  --text-l: 1.25rem;
+  --text-xl: 2.5rem;
+
+  /* Space: multiples of one unit */
+  --u: 0.25rem;
+  --s1: calc(var(--u) * 2);
+  --s2: calc(var(--u) * 4);
+  --s3: calc(var(--u) * 6);
+  --s4: calc(var(--u) * 10);
+  --s5: calc(var(--u) * 16);
+
+  --edge: calc(var(--u) / 2) solid var(--ink);
+  --hairline: 1px solid var(--line);
+}
+
+/* One root size that follows the screen, so the page reads the same on a
+   small laptop panel and a 4K one. */
+html { font-size: clamp(15px, 1.05vw, 30px); }
+
+* { box-sizing: border-box; margin: 0; }
+
+body {
+  height: 100vh;
+  display: grid;
+  grid-template-rows: auto 1fr auto;
+  background: var(--canvas);
+  color: var(--ink);
+  font: 400 var(--text-m) / 1.5 var(--font-body);
+  overflow: hidden;
+  cursor: default;
+  user-select: none;
+}
+
+/* ---------------------------------------------------------------- frame */
+
+.bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: var(--s2) var(--s4);
+  border-bottom: var(--edge);
+  background: var(--surface);
+}
+.brand { display: flex; align-items: center; gap: var(--s2); }
+.brand-mark { width: 1.25rem; height: 1.875rem; fill: var(--ink); }
+.brand-mark .pointer-tip, .pointer-tip { fill: var(--accent); }
+.brand-name { font: 500 1.75rem / 1 var(--font-display); }
+.bar-note { color: var(--muted); font-size: var(--text-s); }
+
+.frame { display: grid; grid-template-columns: 17rem 1fr; min-height: 0; }
+
+.rail { padding: var(--s4) 0 var(--s4) var(--s4); border-right: var(--hairline); }
+.rail ol { list-style: none; padding: 0; display: grid; gap: var(--s1); }
+.rail li {
+  display: grid;
+  grid-template-columns: 1.5rem 1fr;
+  align-items: center;
+  gap: var(--s1);
+  padding: var(--s1) 0;
+  color: var(--muted);
+}
+.rail li svg { width: 0.75rem; height: 1.125rem; fill: var(--ink); justify-self: center; visibility: hidden; }
+.rail li.is-done { color: var(--ink); }
+.rail li.is-done svg { visibility: visible; width: 0.875rem; height: 0.75rem; fill: var(--accent); }
+.rail li.is-current { color: var(--ink); font-weight: 600; }
+.rail li.is-current svg { visibility: visible; }
+.rail.is-hidden ol { visibility: hidden; }
+
+.stage { padding: var(--s4) var(--s5); overflow-y: auto; min-height: 0; }
+.stage > * { max-width: 44rem; }
+.stage > .columns { max-width: 56rem; display: grid; grid-template-columns: 1fr 1fr; gap: var(--s4); align-items: start; }
+.columns h2 { margin-top: 0; }
+
+/* The welcome screen's one picture: the logo's pointer, large. */
+.hero { display: block; width: 8rem; height: 12rem; margin-top: var(--s5); fill: var(--ink); }
+
+.actions {
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  gap: var(--s2);
+  padding: var(--s3) var(--s4);
+  border-top: var(--edge);
+  background: var(--surface);
+  min-height: 5.5rem;
+}
+.actions .spacer { flex: 1; }
+
+/* ----------------------------------------------------------------- type */
+
+h1 { font: 700 var(--text-xl) / 1.1 var(--font-display); margin-bottom: var(--s2); }
+h2 { font: 600 var(--text-m) / 1.4 var(--font-body); margin: var(--s3) 0 var(--s1); }
+.lede { font-size: var(--text-l); line-height: 1.45; color: var(--muted); margin-bottom: var(--s3); max-width: 36rem; }
+p + p { margin-top: var(--s1); }
+.muted { color: var(--muted); }
+.small { font-size: var(--text-s); }
+code, .code { font-family: var(--font-code); font-size: 0.95em; user-select: text; }
+
+/* -------------------------------------------------------------- buttons */
+
+.button {
+  font: 500 var(--text-m) / 1 var(--font-body);
+  color: var(--ink);
+  background: var(--surface);
+  border: var(--edge);
+  border-radius: 0;
+  padding: var(--s2) var(--s3);
+  min-width: 8rem;
+  cursor: pointer;
+}
+.button:hover { background: var(--canvas); }
+.button:active { transform: translate(var(--u), var(--u)); box-shadow: none; }
+.button:disabled { color: var(--muted); border-color: var(--line); box-shadow: none; cursor: default; background: var(--surface); }
+
+/* The one loud thing on each screen: a block with a hard pixel shadow. */
+.button--primary { background: var(--accent); color: #fff; box-shadow: var(--u) var(--u) 0 var(--ink); }
+.button--primary:hover { background: var(--accent-strong); }
+.button--danger { background: var(--danger); color: #fff; box-shadow: var(--u) var(--u) 0 var(--ink); }
+.button--danger:hover { background: #8f1a11; }
+.button--quiet { border-color: transparent; text-decoration: underline; text-underline-offset: 0.2em; min-width: 0; }
+
+:focus-visible { outline: calc(var(--u) * 0.75) solid var(--accent); outline-offset: var(--u); }
+
+/* --------------------------------------------------------------- fields */
+
+.field { display: grid; gap: var(--s1); margin-top: var(--s2); max-width: 26rem; }
+.field label { font-weight: 500; }
+.input {
+  font: 400 var(--text-l) / 1.2 var(--font-code);
+  color: var(--ink);
+  background: var(--surface);
+  border: var(--edge);
+  border-radius: 0;
+  padding: var(--s2);
+  width: 100%;
+  user-select: text;
+}
+.input::placeholder { color: var(--line); }
+
+/* -------------------------------------------------------------- choices */
+/* A list of rows. Radio rows show the pixel pointer on the chosen one;
+   checkbox rows show a pixel tick in a box. */
+
+.choices { display: grid; border: var(--edge); background: var(--surface); margin-top: var(--s2); }
+.choice {
+  display: grid;
+  grid-template-columns: 2rem 1fr auto;
+  align-items: center;
+  gap: var(--s2);
+  padding: var(--s2) var(--s3);
+  border-top: var(--hairline);
+  cursor: pointer;
+}
+.choice:first-child { border-top: 0; }
+.choice:hover { background: var(--canvas); }
+.choice input { position: absolute; opacity: 0; pointer-events: none; }
+.choice:has(input:checked) { background: var(--accent-soft); }
+.choice:has(input:focus-visible) { outline: calc(var(--u) * 0.75) solid var(--accent); outline-offset: calc(var(--u) * -1); }
+.choice .mark { width: 0.875rem; height: 1.3125rem; fill: var(--ink); visibility: hidden; justify-self: center; }
+.choice:has(input[type="radio"]:checked) .mark { visibility: visible; }
+.choice .box { width: 1.375rem; height: 1.375rem; border: var(--edge); background: var(--surface); display: grid; place-items: center; justify-self: center; }
+.choice .box svg { width: 0.75rem; height: 0.625rem; fill: var(--accent-strong); visibility: hidden; }
+.choice:has(input:checked) .box svg { visibility: visible; }
+.choice .name { font-weight: 500; }
+.choice .detail { color: var(--muted); font-size: var(--text-s); }
+.choice .aside { color: var(--muted); font: 400 var(--text-s) var(--font-code); text-align: right; }
+
+/* -------------------------------------------------------------- notices */
+
+.notice { border: var(--edge); padding: var(--s2) var(--s3); margin-top: var(--s3); background: var(--surface); }
+.notice--good { background: var(--accent-soft); }
+.notice--bad { background: var(--danger-soft); border-color: var(--danger); }
+.notice strong { font-weight: 600; }
+
+/* A two-column summary. */
+.summary { display: grid; grid-template-columns: 9rem 1fr; border: var(--edge); background: var(--surface); margin-top: var(--s2); }
+.summary dt, .summary dd { padding: var(--s2) var(--s3); border-top: var(--hairline); }
+.summary dt:first-of-type, .summary dt:first-of-type + dd { border-top: 0; }
+.summary dt { color: var(--muted); }
+.summary dd { font-weight: 500; }
+
+/* ------------------------------------------------------------- progress */
+
+.meter { display: grid; grid-template-columns: repeat(32, 1fr); gap: var(--u); margin: var(--s3) 0; max-width: 36rem; }
+.meter i { height: 1.25rem; background: var(--line); }
+.meter i.is-on { background: var(--accent); }
+.meter.is-busy i { animation: scan 1.6s steps(1) infinite; animation-delay: calc(var(--i) * 50ms); }
+@keyframes scan { 0%, 12% { background: var(--accent); } 13%, 100% { background: var(--line); } }
+
+.phases { list-style: none; padding: 0; display: grid; gap: var(--s1); }
+.phases li { display: grid; grid-template-columns: 1.5rem 1fr; gap: var(--s1); align-items: center; color: var(--muted); }
+.phases li svg { width: 0.875rem; height: 0.75rem; fill: var(--accent); visibility: hidden; justify-self: center; }
+.phases li.is-done { color: var(--ink); }
+.phases li.is-done svg { visibility: visible; }
+.phases li.is-current { color: var(--ink); font-weight: 600; }
+.phases li.is-current svg { visibility: visible; width: 0.75rem; height: 1.125rem; fill: var(--ink); }
+
+.logline { margin-top: var(--s3); color: var(--muted); font: 400 var(--text-s) var(--font-code); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 44rem; }
+
+/* ------------------------------------------------------- codes and keys */
+
+.scan { display: grid; grid-template-columns: auto 1fr; gap: var(--s3); align-items: start; margin-top: var(--s3); }
+.qr { border: var(--edge); background: #fff; padding: var(--s1); width: 13rem; height: 13rem; }
+.qr svg { width: 100%; height: 100%; display: block; }
+.keycode { font: 500 var(--text-l) / 1.4 var(--font-code); white-space: nowrap; user-select: text; }
+.lines { display: grid; gap: var(--s1); margin-top: var(--s1); }
+.lines div { display: grid; grid-template-columns: 11rem 1fr; }
+
+@media (prefers-reduced-motion: reduce) { .meter.is-busy i { animation: none; } }
