@@ -140,6 +140,10 @@ in
         "quiet"
         "loglevel=3"
       ];
+
+      # Skip the boot menu (installer, recovery, memory test ...) and start
+      # the installer straight away.
+      boot.loader.timeout = lib.mkForce 0;
     }
 
     # An unattended stick asks nothing, so it needs no screen: run the
