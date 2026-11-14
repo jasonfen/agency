@@ -1,4 +1,4 @@
-# Disk layout. The installer erases settings.disk and creates:
+# Disk layout. The installer erases the target disk and creates:
 #
 #   ESP   1 GB    /boot    (unencrypted, holds the boot loader and kernels)
 #   luks  rest    encrypted; unlocked by the TPM chip at boot
@@ -9,7 +9,7 @@
 #
 # btrfs gives cheap snapshots and instant copies (`cp --reflink`), which
 # agents use for throwaway work trees.
-{ settings, ... }:
+{ ... }:
 let
   mountOptions = [
     "compress=zstd"
@@ -19,7 +19,9 @@ in
 {
   disko.devices.disk.main = {
     type = "disk";
-    device = settings.disk;
+    # A link the installer points at the disk it chose. After install the
+    # system finds its partitions by label, so this path is not used again.
+    device = "/dev/agency-target";
     content = {
       type = "gpt";
       partitions = {

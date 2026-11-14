@@ -1,4 +1,5 @@
-# This laptop is a server: lid closed, always on, battery as a built-in UPS.
+# Treat the machine as a server: lid closed, always on. On a laptop the
+# battery acts as a built-in UPS. Harmless on a desktop.
 { ... }:
 {
   # Closing the lid does nothing.
@@ -18,7 +19,4 @@
 
   # Turn the built-in screen off after two idle minutes.
   boot.kernelParams = [ "consoleblank=120" ];
-
-  # Intel thermal management; this is a thin chassis running all day.
-  services.thermald.enable = true;
 }

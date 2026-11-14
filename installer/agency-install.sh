@@ -4,8 +4,8 @@
 # check leaves the machine exactly as it was.
 #
 # These variables are filled in from settings.nix by installer/default.nix:
-#   AGENCY_DISK         disk to erase
-#   AGENCY_VENDOR       wipe guard: required DMI vendor text
+#   AGENCY_DISK         disk to erase; empty = largest internal disk
+#   AGENCY_VENDOR       optional wipe guard: required DMI vendor text
 #   AGENCY_GITHUB_USER  GitHub account whose public SSH keys are installed
 #   AGENCY_SSH_KEYS     file with extra public keys from settings.nix
 #   AGENCY_WIPE         script that partitions, formats and mounts the disk
@@ -32,21 +32,37 @@ stop() {
 
 [ "$(id -u)" = 0 ] || stop "must run as root."
 [ -d /sys/firmware/efi ] || stop "not booted in UEFI mode. Disable legacy/CSM boot in the BIOS."
-[ -b "$AGENCY_DISK" ] || stop "target disk $AGENCY_DISK does not exist. Run lsblk and fix 'disk' in settings.nix."
-
+# The USB stick we booted from must never be the target.
+boot_disk=""
 boot_part=$(findmnt -no SOURCE /iso 2>/dev/null || true)
 if [ -n "$boot_part" ]; then
-  boot_disk=$(lsblk -no PKNAME "$boot_part" 2>/dev/null || true)
-  [ "/dev/$boot_disk" != "$AGENCY_DISK" ] || stop "target disk $AGENCY_DISK is the USB stick itself."
+  boot_disk=$(lsblk -no PKNAME "$boot_part" 2>/dev/null | head -n1 || true)
 fi
 
+# Largest internal disk: not removable, not USB, not the boot stick.
+pick_disk() {
+  lsblk -dnbo NAME,SIZE,TYPE,RM,TRAN |
+    awk -v skip="$boot_disk" \
+      '$3 == "disk" && $4 == 0 && $5 != "usb" && $1 != skip && $1 !~ /^(zram|loop|ram)/ { print $2, $1 }' |
+    sort -rn | awk 'NR == 1 { print "/dev/" $2 }'
+}
+
+disk=$AGENCY_DISK
+if [ -z "$disk" ]; then disk=$(pick_disk); fi
+if [ -z "$disk" ] || [ ! -b "$disk" ]; then
+  stop "no internal disk found (looked for '${disk:-any}'). Run lsblk, then set 'disk' in settings.nix."
+fi
+[ "$disk" != "/dev/$boot_disk" ] || stop "target disk $disk is the USB stick itself."
+
 if [ "$force" = 0 ]; then
-  vendor=$(cat /sys/class/dmi/id/sys_vendor 2>/dev/null || true)
-  case "$vendor" in
-    *"$AGENCY_VENDOR"*) ;;
-    *) stop "this is a '$vendor' machine but the installer expects '$AGENCY_VENDOR'. If this really is the right machine, run: sudo agency-install --force" ;;
-  esac
-  [ ! -e "$luks_part" ] || stop "this disk already holds an install. Remove the USB stick and reboot. To erase and reinstall anyway, run: sudo agency-install --force"
+  if [ -n "$AGENCY_VENDOR" ]; then
+    vendor=$(cat /sys/class/dmi/id/sys_vendor 2>/dev/null || true)
+    case "$vendor" in
+      *"$AGENCY_VENDOR"*) ;;
+      *) stop "this is a '$vendor' machine but the installer expects '$AGENCY_VENDOR'. If this really is the right machine, run: sudo agency-install --force" ;;
+    esac
+  fi
+  [ ! -e "$luks_part" ] || stop "this machine already holds an install. Remove the USB stick and reboot. To erase and reinstall anyway, run: sudo agency-install --force"
 fi
 
 [ "$(cat /sys/class/tpm/tpm0/tpm_version_major 2>/dev/null || true)" = 2 ] ||
@@ -67,7 +83,7 @@ grep -Eq '^(ssh-|ecdsa-|sk-)' "$keys" ||
 
 # ------------------------------------------------------------- last call ---
 
-say "ALL DATA on $AGENCY_DISK ($(lsblk -dno MODEL,SIZE "$AGENCY_DISK" | tr -s ' ')) will be ERASED."
+say "ALL DATA on $disk ($(lsblk -dno MODEL,SIZE "$disk" | tr -s ' ')) will be ERASED."
 say "To cancel, hold the power button now."
 for i in $(seq 30 -1 1); do
   printf '\r[agency] erasing in %2d seconds ' "$i"
@@ -77,7 +93,10 @@ printf '\n'
 
 # --------------------------------------------------------------- install ---
 
-say "Partitioning and formatting $AGENCY_DISK ..."
+# The disk layout refers to the target as /dev/agency-target.
+ln -sfn "$disk" /dev/agency-target
+
+say "Partitioning and formatting $disk ..."
 (umask 077 && head -c 32 /dev/urandom | base64 -w0 >"$luks_key")
 "$AGENCY_WIPE" --yes-wipe-all-disks
 

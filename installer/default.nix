@@ -25,6 +25,7 @@ let
       pkgs.util-linux
       pkgs.curl
       pkgs.gnugrep
+      pkgs.gawk
     ];
     text = ''
       export AGENCY_DISK=${lib.escapeShellArg settings.disk}

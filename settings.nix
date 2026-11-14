@@ -10,13 +10,14 @@
 
   timeZone = "UTC";
 
-  # The disk the installer ERASES. Check with `lsblk` if unsure.
-  disk = "/dev/nvme0n1";
+  # The disk the installer ERASES. Leave empty to use the largest internal
+  # disk, or name one (for example "/dev/nvme0n1") on machines with several.
+  disk = "";
 
-  # Wipe guard. The installer only runs unattended on a machine whose DMI
-  # vendor string contains this text (see /sys/class/dmi/id/sys_vendor).
-  # On any other machine it stops and waits for a human.
-  vendorMatch = "Micro-Star";
+  # Optional wipe guard. If set, the installer only runs unattended on a
+  # machine whose vendor string (/sys/class/dmi/id/sys_vendor) contains this
+  # text, for example "LENOVO". Empty means it installs on whatever it boots.
+  vendorMatch = "";
 
   # SSH access. At install time the installer downloads the public keys of
   # this GitHub account (https://github.com/<name>.keys). Set to "" to skip.

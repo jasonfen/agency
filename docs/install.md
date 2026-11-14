@@ -2,14 +2,14 @@
 
 ## What you need
 
-- The laptop, a USB stick (8 GB or more), a wired network connection.
+- An x86-64 laptop or PC with UEFI and TPM 2.0, a USB stick (8 GB or more), a wired network connection.
 - An SSH key on the GitHub account named in `settings.nix`. The installer fetches the public keys from `github.com/<githubUser>.keys`. Password login is disabled.
 
 ## What the installer does
 
 1. Checks the machine (see below).
 2. Counts down 30 seconds. Holding the power button cancels.
-3. Erases the disk named in `settings.nix` and creates an encrypted btrfs volume.
+3. Erases the largest internal disk (or the one named in `settings.nix`) and creates an encrypted btrfs volume. The disk's model and size are shown during the countdown.
 4. Copies the prebuilt system from the stick. Nothing is downloaded except your SSH keys.
 5. Binds the disk encryption to the TPM, so the machine boots unattended.
 6. Reboots.
@@ -18,12 +18,14 @@
 
 The installer stops before touching the disk if:
 
-- the machine's vendor doesn't match `vendorMatch` in `settings.nix`
+- `vendorMatch` is set in `settings.nix` and the machine's vendor doesn't match
 - the disk already has an agency install, so a stick left plugged in can't reinstall in a loop
 - there is no TPM 2.0, or the machine booted in legacy mode
 - it found no SSH public key
 
 `sudo agency-install --force`, from the shell on Alt+F2, skips the first two checks.
+
+By default there is no vendor check: the stick installs on any machine it boots, after the countdown. Label it.
 
 ## Joining Tailscale without logging in
 

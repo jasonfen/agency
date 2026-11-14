@@ -1,7 +1,7 @@
 <p align="center">
   <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="docs/logo-dark.svg">
-    <img src="docs/logo.svg" alt="agency" height="96">
+    <source media="(prefers-color-scheme: dark)" srcset="docs/agency-dark.svg">
+    <img src="docs/agency.svg" alt="agency" height="96">
   </picture>
 </p>
 
@@ -38,4 +38,4 @@ The desktop is at `http://agency:6081/vnc.html`. Agents should start with [AGENT
 
 Builds in CI. Not yet tested on real hardware.
 
-Written for an MSI GF63 Thin 11UC. For another machine, edit `settings.nix` and `hosts/agency/hardware.nix`.
+Works on any x86-64 laptop or PC with UEFI and a TPM 2.0 chip. Names and keys are set in `settings.nix`.
