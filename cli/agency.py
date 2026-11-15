@@ -25,6 +25,10 @@ SETTINGS = REPO / "settings.nix"
 FLAKE = f"path:{REPO}#agency"
 USER = os.environ.get("AGENCY_USER", "agent")
 DEFAULT_REPO = "https://github.com/makors/agency"
+# Parts of the repo the running system never uses: the download page, docs,
+# READMEs and CI. Changes to only these need no rebuild, and the dashboard
+# does not offer them as updates. Keep in step with dashboard/server.py.
+NOT_SYSTEM = ("site", "docs", ".github", "**/README.md")
 
 # Written by the installer: the commit of this repo the machine came from.
 SOURCE_REV = Path("/var/lib/agency/source-rev")
@@ -367,12 +371,11 @@ def cmd_update(args):
     if not behind and not args.packages:
         say("Already up to date. (`agency update --packages` also updates nixpkgs.)")
         return
-    # The download page (site/) lives in this repo but is not part of the
-    # system: when nothing else changed, there is nothing to rebuild.
-    changed = output(["git", "-C", REPO, "diff", "--name-only", before, "HEAD"]).splitlines()
-    if behind and not args.packages and changed and all(p.startswith("site/") for p in changed):
-        say("Only the download page changed. Nothing to rebuild.")
-        return
+    if behind and not args.packages:
+        system = ["--", ".", *(f":(exclude,glob){p}" for p in NOT_SYSTEM)]
+        if git("diff", "--quiet", before, "HEAD", *system, check=False).returncode == 0:
+            say("Nothing the system uses changed. Nothing to rebuild.")
+            return
     rebuild()
 
 

@@ -45,6 +45,10 @@ EXTRA_LOGINS = {u.strip().lower() for u in os.environ.get("AGENCY_DASHBOARD_USER
 TERMINAL = ("127.0.0.1", int(os.environ.get("AGENCY_TERMINAL_PORT", "7381")))
 # Overridable so the server can be tried off the real machine.
 REPO = Path(os.environ.get("AGENCY_REPO", "/etc/nixos"))
+# Parts of the repo the running system never uses: the download page, docs,
+# READMEs and CI. A commit that touches only these is not an update.
+# Keep in step with NOT_SYSTEM in cli/agency.py.
+NOT_SYSTEM = ("site", "docs", ".github", "**/README.md")
 URL_FILE = Path(os.environ.get("AGENCY_URL_FILE", "/run/agency/dashboard-url"))
 PROFILE = Path(os.environ.get("AGENCY_PROFILE", "/nix/var/nix/profiles/system"))
 RECOVERY_KEY = "/root/luks-recovery-key.txt"
@@ -360,7 +364,8 @@ class Updates:
                 ok, _, err = sh("git", "-C", str(REPO), "fetch", "-q", "origin", timeout=90)
                 if not ok:
                     state["error"] = "Could not reach the repo to check for updates."
-            ok, out, _ = sh("git", "-C", str(REPO), "log", "--format=%s", "HEAD..@{u}", timeout=10)
+            ok, out, _ = sh("git", "-C", str(REPO), "log", "--format=%s", "HEAD..@{u}", "--", ".",
+                            *(f":(exclude,glob){p}" for p in NOT_SYSTEM), timeout=10)
             subjects = out.splitlines() if ok else []
             state.update(behind=len(subjects), subjects=subjects[:5])
         state["status"] = self.status_of(state)
