@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Settings - agency</title>
-  <link rel="icon" href="data:,">
+  <link rel="icon" type="image/svg+xml" href="/favicon.svg">
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
@@ -28,11 +28,12 @@
     <nav class="nav" aria-label="Sections">
       <a href="/#desktops">Desktops</a>
       <a href="/#terminal">Terminal</a>
-      <a href="/#accounts">Accounts</a>
       <a href="/#apps">Apps</a>
-      <a href="/#secrets">Secrets</a>
-      <a href="/#system">System</a>
-      <a href="/settings" class="is-current" aria-current="page">Settings</a>
+      <a href="/settings" aria-current="page">Settings</a>
+      <a href="#accounts" class="nav-sub">Accounts</a>
+      <a href="#secrets" class="nav-sub">Secrets</a>
+      <a href="#system" class="nav-sub">System</a>
+      <a href="#transfer" class="nav-sub">Move</a>
     </nav>
 
     <main class="main">
@@ -40,6 +41,37 @@
         <div id="notice" role="alert"></div>
       </section>
 
+      <section id="accounts" class="section">
+        <h2>Accounts</h2>
+        <div id="account-list" class="list"></div>
+      </section>
+      <section id="secrets" class="section">
+        <div class="section-head">
+          <h2>Secrets</h2>
+          <button type="button" class="button" data-action="secret-add">Add a secret</button>
+        </div>
+        <form id="secret-form" class="box form" hidden autocomplete="off">
+          <label>Name <input class="input mono" name="name" placeholder="OPENAI_API_KEY" pattern="[A-Z_][A-Z0-9_]*" required spellcheck="false" autocapitalize="characters"></label>
+          <label>Value <input class="input mono" name="value" type="password" required autocomplete="new-password"></label>
+          <div class="buttons">
+            <button type="submit" class="button button--primary" data-job>Save</button>
+            <button type="button" class="button" data-action="secret-cancel">Cancel</button>
+          </div>
+        </form>
+        <div id="secret-list" class="list"></div>
+        <p class="note">Saved encrypted; values are not shown again. Agents read each one as an environment variable of the same name.</p>
+      </section>
+      <section id="system" class="section">
+        <h2>System</h2>
+        <div id="updates" class="banner"></div>
+        <div class="box">
+          <dl id="system-facts" class="facts"></dl>
+          <div class="buttons">
+            <button type="button" class="button" data-action="update" data-job>Update</button>
+            <button type="button" class="button" data-action="rollback" data-job>Go back to the previous system</button>
+          </div>
+        </div>
+      </section>
       <section id="transfer" class="section">
         <h2>Move to another machine</h2>
         <p class="note">Copy this setup to another machine. Each keeps its own name, disks and Tailscale login.</p>

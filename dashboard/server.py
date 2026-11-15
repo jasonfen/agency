@@ -235,8 +235,23 @@ def apps():
 
 
 def secrets():
+    """Each secret's name, and when it was added and last set (None if the
+    history does not say, as for secrets that came with an import)."""
     ok, out, _ = sh("agency", "secret", "list", timeout=30)
-    return [line.strip() for line in out.splitlines() if SECRET_NAME.match(line.strip())] if ok else []
+    names = [line.strip() for line in out.splitlines() if SECRET_NAME.match(line.strip())] if ok else []
+    # `agency secret` commits "Set secret NAME" and "Remove secret NAME".
+    _, log, _ = sh("git", "-C", str(REPO), "log", "--format=%ct %s", "--", "secrets")
+    added, changed = {}, {}
+    for line in reversed(log.splitlines()):  # oldest first
+        stamp, _, subject = line.partition(" ")
+        verb, _, name = subject.partition(" secret ")
+        if verb == "Set" and name:
+            added.setdefault(name, int(stamp))
+            changed[name] = int(stamp)
+        elif verb == "Remove":
+            added.pop(name, None)
+            changed.pop(name, None)
+    return [{"name": n, "added": added.get(n), "changed": changed.get(n)} for n in names]
 
 
 # ------------------------------------------------------------- transfer ---

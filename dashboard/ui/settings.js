@@ -1,9 +1,11 @@
-// The settings page, at /settings. For now: moving this machine's setup to
-// another one (`agency export` and `agency import`, see cli/agency.py).
+// The settings page, at /settings: accounts, secrets, the system, and
+// moving this machine's setup to another one (`agency export` and `agency
+// import`, see cli/agency.py).
 //
 // An export is a job; when it is done the file waits on the server to be
 // downloaded. An import is an upload first (with progress), then a job.
 
+let state = null; // /api/state
 let job = null;
 let info = null; // /api/transfer
 let uploading = null; // { sent, total } while a file goes up
@@ -23,6 +25,95 @@ function made(stamp) {
 }
 
 // ---------------------------------------------------------------- drawing
+
+// GitHub and T3 Code sign in with a short code shown here; the others in
+// the terminal on the home page. logins[id] mirrors the server's sign-in state (idle,
+// starting, waiting, done, failed), polled while starting or waiting.
+const CODE_LOGINS = { github: "/api/github", t3: "/api/login/t3" };
+const logins = { github: { state: "idle" }, t3: { state: "idle" } };
+const loginTimers = {};
+const busyLogin = (id) => ["starting", "waiting"].includes(logins[id]?.state);
+
+async function pollLogin(id) {
+  logins[id] = await api(CODE_LOGINS[id]);
+  if (state) drawAccounts(state.accounts);
+  if (busyLogin(id)) {
+    loginTimers[id] = setTimeout(() => pollLogin(id), 2000);
+  } else {
+    loginTimers[id] = null;
+    if (logins[id].state === "done") refresh();
+  }
+}
+
+function loginPanel(id) {
+  const l = logins[id];
+  if (!l || l.state === "idle" || l.state === "done") return "";
+  if (l.state === "starting") return `<div class="device"><p class="row-detail">Getting a sign-in code.</p></div>`;
+  if (l.state === "failed") return `<div class="device"><p class="row-detail">${esc(l.error)}</p></div>`;
+  const shown = l.url.replace(/^https:\/\//, "").replace(/\?.*$/, "");
+  return `<div class="device">
+    <div class="device-text">
+      ${l.code
+        ? `<p>Open <a href="${esc(l.url)}" target="_blank" rel="noopener">${esc(shown)}</a> and enter:</p>
+      <p class="device-code mono">${esc(l.code)}</p>`
+        : `<p>Open <a href="${esc(l.url)}" target="_blank" rel="noopener">${esc(shown)}</a> and finish signing in there.</p>`}
+      <p class="row-detail">This updates by itself when you are done.</p>
+    </div>
+    <button type="button" class="button" data-login-cancel="${id}">Cancel</button>
+  </div>`;
+}
+
+function drawAccounts(list) {
+  setHTML($("#account-list"), list.map((a) => {
+    const busy = busyLogin(a.id);
+    const label = a.signedIn ? "Sign in again" : "Sign in";
+    const look = a.signedIn ? "button" : "button button--solid";
+    // GitHub and T3 Code sign in here; the rest in the home page's terminal.
+    const button = !a.installed || busy ? ""
+      : a.id in CODE_LOGINS ? `<button type="button" class="${look}" data-signin="${a.id}">${label}</button>`
+      : `<a class="${look}" href="/?signin=${encodeURIComponent(a.id)}">${label}</a>`;
+    return `<div class="row">
+      <div><p class="row-name">${esc(a.label)}</p><p class="row-detail">${a.signedIn ? `<span class="on">${esc(a.detail)}</span>` : esc(a.detail)}</p></div>
+      ${button}
+    </div>${a.id in CODE_LOGINS ? loginPanel(a.id) : ""}`;
+  }).join(""));
+}
+
+// When each secret was added and last set, from the repo's history.
+function when(stamp) {
+  if (!stamp) return `<span class="muted">Unknown</span>`;
+  const d = new Date(stamp * 1000);
+  return `<time datetime="${d.toISOString()}" title="${esc(d.toLocaleString())}">${esc(d.toLocaleDateString(undefined, { day: "numeric", month: "short", year: "numeric" }))}</time>`;
+}
+
+function drawSecrets(list) {
+  const dis = running() ? "disabled" : "";
+  setHTML($("#secret-list"), list.length ? `<table class="table">
+    <thead><tr><th>Name</th><th class="wide">Added</th><th class="wide">Last changed</th><th><span class="sr-only">Actions</span></th></tr></thead>
+    <tbody>${list.map((x) => `<tr>
+      <td><span class="mono">${esc(x.name)}</span>${x.added ? `<span class="narrow">Added ${when(x.added)}</span>` : ""}</td>
+      <td class="wide">${when(x.added)}</td>
+      <td class="wide">${when(x.changed)}</td>
+      <td><div class="buttons table-actions">
+        <button type="button" class="button" data-secret-replace="${esc(x.name)}" ${dis}>Replace</button>
+        <button type="button" class="button button--danger" data-secret-remove="${esc(x.name)}" ${dis}>Remove</button>
+      </div></td>
+    </tr>`).join("")}</tbody>
+  </table>` : `<p class="row muted">No secrets yet.</p>`);
+}
+
+function drawSystem(s) {
+  const rows = [];
+  const made = day(s.generationTime);
+  rows.push(["Version", s.generation ? `Generation ${s.generation}${made ? `, updated ${made}` : ""}` : "Unknown"]);
+  rows.push(["Disk", `${gb(s.disk.used)} of ${gb(s.disk.total)} GB used`]);
+  if (s.memory) rows.push(["Memory", `${gb(s.memory.used)} of ${gb(s.memory.total)} GB used`]);
+  rows.push(["Recovery key", s.recoveryKey
+    ? "Still on the disk. To save it and delete it, run <code>agency recovery-key</code> over SSH."
+    : `<span class="on">Removed from the disk</span>`]);
+  setHTML($("#system-facts"), rows.map(([k, v]) => `<dt>${k}</dt><dd>${v}</dd>`).join(""));
+}
+
 
 function drawExportFile() {
   const f = info?.export;
@@ -66,6 +157,12 @@ function drawUpload() {
 }
 
 function draw() {
+  if (state) {
+    drawAccounts(state.accounts);
+    drawSecrets(state.secrets);
+    drawSystem(state.system);
+    drawUpdates(state.updates, running());
+  }
   drawExportFile();
   drawUpload();
   for (const b of document.querySelectorAll("[data-job]")) b.disabled = running() || !!uploading;
@@ -84,6 +181,7 @@ async function refresh() {
     } else {
       drawHeader(s);
       document.title = "Settings - agency";
+      state = s;
       job = s.job;
       drawDock(job);
     }
@@ -181,11 +279,71 @@ drop.addEventListener("drop", (ev) => {
   }
 });
 
+// Add a secret, or replace one: the same form, with the name filled in.
+function secretForm(name) {
+  const form = $("#secret-form");
+  form.reset();
+  form.hidden = false;
+  form.elements.name.value = name || "";
+  form.elements.name.readOnly = !!name;
+  form.elements[name ? "value" : "name"].focus();
+}
+
+$("#secret-form [name=name]").addEventListener("input", (ev) => {
+  ev.target.value = ev.target.value.toUpperCase().replace(/[^A-Z0-9_]/g, "_");
+});
+
+$("#secret-form").addEventListener("submit", async (ev) => {
+  ev.preventDefault();
+  const form = ev.target;
+  const name = form.elements.name.value;
+  if (!form.elements.name.readOnly && state?.secrets.some((x) => x.name === name)
+      && !confirm(`There is already a secret called ${name}. Replace its value?`)) return;
+  if (await startJob("/api/secrets/set", { name, value: form.elements.value.value })) {
+    form.reset();
+    form.hidden = true;
+  }
+});
+
 document.addEventListener("click", async (ev) => {
   const t = ev.target.closest("button");
   if (!t) return;
   if (t.closest("#drop")) ev.preventDefault(); // not the label's file dialog
+  if (t.dataset.signin) {
+    const id = t.dataset.signin;
+    logins[id] = await api(`${CODE_LOGINS[id]}/start`, {});
+    clearTimeout(loginTimers[id]);
+    return pollLogin(id);
+  }
+  if (t.dataset.loginCancel) {
+    const id = t.dataset.loginCancel;
+    logins[id] = await api(`${CODE_LOGINS[id]}/cancel`, {});
+    clearTimeout(loginTimers[id]);
+    return drawAccounts(state.accounts);
+  }
+  if (t.dataset.secretReplace) return secretForm(t.dataset.secretReplace);
+  if (t.dataset.secretRemove) {
+    const name = t.dataset.secretRemove;
+    if (!confirm(`Remove the secret ${name}? Agents can no longer read it.`)) return;
+    return startJob("/api/secrets/remove", { name });
+  }
   switch (t.dataset.action) {
+    case "secret-add":
+      return secretForm();
+    case "secret-cancel":
+      $("#secret-form").reset();
+      $("#secret-form").hidden = true;
+      return;
+    case "update":
+      return startJob("/api/update");
+    case "check":
+      t.disabled = true;
+      t.textContent = "Checking";
+      await api("/api/update/check", {});
+      return refresh();
+    case "rollback":
+      if (!confirm("Go back to the previous system? /etc/nixos does not change, so the next rebuild brings this one back.")) return;
+      return startJob("/api/rollback");
     case "file-clear":
       chosen = null;
       $("#import-file").value = "";
@@ -213,3 +371,5 @@ addEventListener("beforeunload", (ev) => {
 
 draw();
 refresh();
+// A sign-in may already be under way, from before a reload or another tab.
+for (const id of Object.keys(CODE_LOGINS)) pollLogin(id).catch(() => {});

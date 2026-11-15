@@ -25,6 +25,60 @@ async function startJob(path, body = {}) {
   return result.ok;
 }
 
+// ---------------------------------------------------------------- shared
+
+const NAMES = { github: "GitHub", claude: "Claude Code", codex: "Codex", opencode: "OpenCode", t3: "T3 Code" };
+
+const gb = (bytes) => {
+  const n = bytes / 1e9;
+  return n >= 100 ? n.toFixed(0) : n.toFixed(1).replace(/\.0$/, "");
+};
+
+function day(stamp) {
+  if (!stamp) return "";
+  const then = new Date(stamp * 1000);
+  const days = Math.round((new Date().setHours(0, 0, 0, 0) - new Date(then).setHours(0, 0, 0, 0)) / 864e5);
+  if (days === 0) return "today";
+  if (days === 1) return "yesterday";
+  return "on " + then.toLocaleDateString(undefined, { day: "numeric", month: "short" });
+}
+
+function ago(stamp) {
+  const s = Math.max(0, Date.now() / 1000 - stamp);
+  if (s < 60) return "just now";
+  if (s < 3600) return `${Math.round(s / 60)} min ago`;
+  if (s < 86400) return `${Math.round(s / 3600)} h ago`;
+  return day(stamp);
+}
+
+// The updates banner. u is null to leave it empty.
+function drawUpdates(u, busy) {
+  if (!u) return setHTML($("#updates"), "");
+  const dis = busy ? "disabled" : "";
+  let text;
+  let button = "";
+  const repo = esc(u.repo || "the agency repo");
+  // u.status is the server's: unlinked, behind, error, current or unchecked.
+  if (u.status === "unlinked") {
+    text = "This machine is not linked to the agency repo yet. Update links it and gets the newest version.";
+    button = `<button type="button" class="button button--primary" data-action="update" ${dis}>Update</button>`;
+  } else if (u.status === "behind") {
+    const list = u.subjects.map((s) => `<li>${esc(s)}</li>`).join("");
+    text = `<strong>${u.behind} update${u.behind === 1 ? "" : "s"}</strong> from ${repo}.<ul>${list}</ul>`;
+    button = `<button type="button" class="button button--primary" data-action="update" ${dis}>Update</button>`;
+  } else if (u.status === "error") {
+    text = esc(u.error);
+    button = `<button type="button" class="button" data-action="check">Check again</button>`;
+  } else if (u.status === "current") {
+    text = `Up to date with ${repo}. <span class="muted">Checked ${ago(u.checked)}.</span>`;
+    button = `<button type="button" class="button" data-action="check">Check again</button>`;
+  } else {
+    text = "Not checked for updates yet.";
+    button = `<button type="button" class="button" data-action="check">Check now</button>`;
+  }
+  setHTML($("#updates"), `<div>${text}</div>${button}`);
+}
+
 // ----------------------------------------------------------------- pieces
 
 function setHTML(el, html) {
@@ -157,3 +211,39 @@ function appLogo(a) {
   return `<span class="logo logo--initials" aria-hidden="true">${esc(initials)}</span>`;
 }
 
+// ------------------------------------------------------------------- nav
+
+// The nav marks the section in view: the last one whose top has passed a
+// line near the top of the window. Sections side by side count as the first.
+// Only links to sections of this page count (home and settings).
+const links = [...document.querySelectorAll('.nav a[href^="#"]')];
+let picked = null; // a section chosen in the nav wins while it is on screen
+let pickedSeen = false;
+function markNav() {
+  let current = links[0];
+  let lastTop = null;
+  for (const a of links) {
+    const top = Math.round(document.getElementById(a.getAttribute("href").slice(1)).getBoundingClientRect().top);
+    if (top <= innerHeight * 0.3 && top !== lastTop) current = a;
+    lastTop = top;
+  }
+  if (picked) {
+    const r = document.getElementById(picked.getAttribute("href").slice(1)).getBoundingClientRect();
+    // Smooth scrolling takes a moment to bring it on screen; it lets go
+    // only once it has been seen and then scrolled away from.
+    if (r.top < innerHeight && r.bottom > 0) { current = picked; pickedSeen = true; }
+    else if (pickedSeen) picked = null;
+    else current = picked;
+  }
+  for (const a of links) a.classList.toggle("is-current", a === current);
+}
+let navQueued = false;
+addEventListener("scroll", () => {
+  if (navQueued) return;
+  navQueued = true;
+  requestAnimationFrame(() => { navQueued = false; markNav(); });
+}, { passive: true });
+if (links.length) markNav();
+for (const a of links) a.addEventListener("click", () => { picked = a; pickedSeen = false; markNav(); });
+// Scrolling by hand lets go of the pick, even mid-flight.
+for (const ev of ["wheel", "touchmove", "keydown"]) addEventListener(ev, () => { picked = null; }, { passive: true });
