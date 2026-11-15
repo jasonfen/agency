@@ -14,6 +14,7 @@ import shutil
 import socket
 import subprocess
 import sys
+import time
 from pathlib import Path
 
 REPO = Path("/etc/nixos")
@@ -195,7 +196,28 @@ def uncommitted():
     return output(["git", "-C", REPO, "status", "--porcelain"]) if (REPO / ".git").is_dir() else ""
 
 
+SWITCH_UNIT = "nixos-rebuild-switch-to-configuration.service"
+
+
+def clear_switch_unit():
+    """nixos-rebuild runs the switch as a transient unit with a fixed name.
+
+    If another switch is running, wait for it. If an earlier one failed or
+    was interrupted and its unit is still loaded, clear it, or this switch
+    fails with "Unit ... was already loaded".
+    """
+    state = output(["systemctl", "is-active", SWITCH_UNIT])
+    if state in ("active", "activating", "deactivating"):
+        say("Another system switch is running. Waiting for it to finish ...")
+        while output(["systemctl", "is-active", SWITCH_UNIT]) in ("active", "activating", "deactivating"):
+            time.sleep(3)
+    if output(["systemctl", "show", "-p", "LoadState", "--value", SWITCH_UNIT]) == "loaded":
+        run(["sudo", "systemctl", "reset-failed", SWITCH_UNIT], check=False, capture=True)
+        run(["sudo", "systemctl", "stop", SWITCH_UNIT], check=False, capture=True)
+
+
 def rebuild(mode="switch"):
+    clear_switch_unit()
     say(f"Rebuilding the system ({mode}) ...")
     result = run(["sudo", tool("nixos-rebuild"), mode, "--flake", FLAKE], check=False)
     if result.returncode != 0:
