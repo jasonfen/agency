@@ -7,6 +7,7 @@
 let job = null;
 let info = null; // /api/transfer
 let uploading = null; // { sent, total } while a file goes up
+let chosen = null; // the File picked or dropped, not sent yet
 
 const running = () => !!(job && job.state === "running");
 
@@ -37,16 +38,31 @@ function drawExportFile() {
     : "");
 }
 
+// The drop zone: empty, a file chosen here, a file going up, or one
+// uploaded before (from an import that has not finished yet).
+const ICON = `<svg class="drop-icon" viewBox="0 0 8 8" shape-rendering="crispEdges" aria-hidden="true">
+  <path d="M3 0h2v1h1v1h1v1h-2v3h-2v-3h-2v-1h1v-1h1zM0 7h8v1h-8z"/></svg>`;
+
 function drawUpload() {
-  let html = "";
+  const drop = $("#drop");
+  let html;
   if (uploading) {
     const pct = uploading.total ? Math.floor((100 * uploading.sent) / uploading.total) : 0;
-    html = `<p class="note">Uploading: ${pct}% of ${size(uploading.total)}.</p>`;
-  } else if (info?.upload && !$("#import-form [name=file]").files.length) {
-    html = `<p class="note">An export of ${size(info.upload.size)} is uploaded and ready.
-      <button type="button" class="button" data-action="import-discard">Discard it</button></p>`;
+    html = `${ICON}<span class="drop-text"><strong>Uploading ${pct}%</strong>
+      <span>${size(uploading.sent)} of ${size(uploading.total)}</span>
+      <span class="drop-bar"><span style="width:${pct}%"></span></span></span>`;
+  } else if (chosen) {
+    html = `${ICON}<span class="drop-text"><strong class="mono">${esc(chosen.name)}</strong><span>${size(chosen.size)}</span></span>
+      <button type="button" class="button" data-action="file-clear">Remove</button>`;
+  } else if (info?.upload) {
+    html = `${ICON}<span class="drop-text"><strong>Export uploaded</strong><span>${size(info.upload.size)}, ready to import</span></span>
+      <button type="button" class="button" data-action="import-discard">Discard</button>`;
+  } else {
+    html = `${ICON}<span class="drop-text"><strong>Choose an export file</strong><span>or drop it here</span></span>`;
   }
-  setHTML($("#upload"), html);
+  drop.classList.toggle("is-chosen", !!(uploading || chosen || info?.upload));
+  drop.classList.toggle("is-empty", !(uploading || chosen || info?.upload));
+  setHTML(drop, html);
 }
 
 function draw() {
@@ -120,7 +136,7 @@ $("#export-form").addEventListener("submit", async (ev) => {
 $("#import-form").addEventListener("submit", async (ev) => {
   ev.preventDefault();
   const form = ev.target;
-  const file = form.elements.file.files[0];
+  const file = chosen;
   if (!file && !info?.upload) return showNotice("Choose the export file first.");
   if (file && info && file.size > info.free) return showNotice("There is not enough free disk space for that file.");
   const home = form.elements.home.checked;
@@ -133,19 +149,47 @@ $("#import-form").addEventListener("submit", async (ev) => {
       showNotice(result.error);
       return refresh();
     }
+    chosen = null;
     form.elements.file.value = "";
+    drawUpload();
   }
   if (await startJob("/api/import", { passphrase: form.elements.passphrase.value, home })) {
     form.elements.passphrase.value = "";
   }
 });
 
-$("#import-form [name=file]").addEventListener("change", drawUpload);
+$("#import-file").addEventListener("change", (ev) => {
+  chosen = ev.target.files[0] || null;
+  drawUpload();
+});
+
+// Drag a file onto the drop zone.
+const drop = $("#drop");
+for (const type of ["dragenter", "dragover"]) {
+  drop.addEventListener(type, (ev) => {
+    ev.preventDefault();
+    if (!uploading) drop.classList.add("is-over");
+  });
+}
+for (const type of ["dragleave", "drop"]) drop.addEventListener(type, () => drop.classList.remove("is-over"));
+drop.addEventListener("drop", (ev) => {
+  ev.preventDefault();
+  const file = ev.dataTransfer.files[0];
+  if (file && !uploading) {
+    chosen = file;
+    drawUpload();
+  }
+});
 
 document.addEventListener("click", async (ev) => {
   const t = ev.target.closest("button");
   if (!t) return;
+  if (t.closest("#drop")) ev.preventDefault(); // not the label's file dialog
   switch (t.dataset.action) {
+    case "file-clear":
+      chosen = null;
+      $("#import-file").value = "";
+      return drawUpload();
     case "export-delete": {
       if (!confirm("Delete the export from this machine? Download it first if you need it.")) return;
       const r = await api("/api/export/delete", {});
@@ -167,4 +211,5 @@ addEventListener("beforeunload", (ev) => {
   if (uploading) ev.preventDefault();
 });
 
+draw();
 refresh();

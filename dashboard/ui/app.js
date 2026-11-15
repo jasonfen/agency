@@ -148,11 +148,18 @@ function drawApps() {
     setHTML($("#app-list"), `<p class="row muted">The list did not load: ${esc(appList.error)}</p>`);
     return;
   }
+  // A compact grid of names, so a long list stays short. Past a dozen,
+  // the rest is a link to the catalog, which has them all.
   const on = appList.apps.filter((a) => a.on);
-  setHTML($("#app-list"), on.map((a) => `<div class="row row--app">
-      ${appLogo(a)}
-      <div class="row-main"><p class="row-name">${esc(a.label)}</p><p class="row-detail">${esc(a.group)}</p></div>
-    </div>`).join("") || `<p class="row muted">No apps yet.</p>`);
+  if (!on.length) {
+    setHTML($("#app-list"), `<p class="row muted">No apps yet.</p>`);
+    return;
+  }
+  const max = on.length > 12 ? 11 : 12;
+  const more = on.length - max;
+  setHTML($("#app-list"), `<div class="app-grid">${on.slice(0, max).map((a) => `<div class="app-tile" title="${esc(a.label)}, ${esc(a.group)}">
+      ${appLogo(a)}<span>${esc(a.label)}</span>
+    </div>`).join("")}${more > 0 ? `<a class="app-tile app-more" href="/apps">${more} more</a>` : ""}</div>`);
 }
 
 function drawSecrets(names) {
@@ -266,6 +273,7 @@ new IntersectionObserver((entries, obs) => {
 // Only links to sections of this page; Settings is a page of its own.
 const links = [...document.querySelectorAll('.nav a[href^="#"]')];
 let picked = null; // a section chosen in the nav wins while it is on screen
+let pickedSeen = false;
 function markNav() {
   let current = links[0];
   let lastTop = null;
@@ -276,8 +284,11 @@ function markNav() {
   }
   if (picked) {
     const r = document.getElementById(picked.getAttribute("href").slice(1)).getBoundingClientRect();
-    if (r.top < innerHeight && r.bottom > 0) current = picked;
-    else picked = null;
+    // Smooth scrolling takes a moment to bring it on screen; it lets go
+    // only once it has been seen and then scrolled away from.
+    if (r.top < innerHeight && r.bottom > 0) { current = picked; pickedSeen = true; }
+    else if (pickedSeen) picked = null;
+    else current = picked;
   }
   for (const a of links) a.classList.toggle("is-current", a === current);
 }
@@ -287,7 +298,9 @@ addEventListener("scroll", () => {
   navQueued = true;
   requestAnimationFrame(() => { navQueued = false; markNav(); });
 }, { passive: true });
-for (const a of links) a.addEventListener("click", () => { picked = a; setTimeout(markNav, 50); });
+for (const a of links) a.addEventListener("click", () => { picked = a; pickedSeen = false; markNav(); });
+// Scrolling by hand lets go of the pick, even mid-flight.
+for (const ev of ["wheel", "touchmove", "keydown"]) addEventListener(ev, () => { picked = null; }, { passive: true });
 
 // ---------------------------------------------------------------- actions
 

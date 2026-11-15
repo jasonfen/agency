@@ -43,16 +43,16 @@
 
       <section id="transfer" class="section">
         <h2>Move to another machine</h2>
-        <p class="note">Copy this machine's setup to a new one: settings, apps, desktops, secrets and your changes to <code>/etc/nixos</code>. Each machine keeps its own name, disks, SSH host key and Tailscale login, so both can stay on your tailnet.</p>
+        <p class="note">Copy this setup to another machine. Each keeps its own name, disks and Tailscale login.</p>
 
         <div class="pair">
           <div class="box">
             <h3>Export</h3>
             <form id="export-form" class="form" autocomplete="off">
-              <label class="check"><input type="checkbox" name="home"> Include the home folder: sign-ins, repos and dotfiles. Caches and app installs are left out, but it can still be large.</label>
+              <label class="check"><input type="checkbox" name="home"><span>Include the home folder <small>Sign-ins, repos and dotfiles</small></span></label>
               <label>Passphrase <input class="input" name="passphrase" type="password" required autocomplete="new-password"></label>
-              <label>The same again <input class="input" name="again" type="password" required autocomplete="new-password"></label>
-              <p class="note">The file is encrypted with this passphrase. You need it to import, and it cannot be recovered.</p>
+              <label>Confirm <input class="input" name="again" type="password" required autocomplete="new-password"></label>
+              <p class="note">You need it to import. It can't be recovered.</p>
               <div class="buttons"><button type="submit" class="button button--primary" data-job>Export</button></div>
             </form>
             <div id="export-file"></div>
@@ -61,11 +61,10 @@
           <div class="box">
             <h3>Import</h3>
             <form id="import-form" class="form" autocomplete="off">
-              <label>Export file <input class="input" name="file" type="file" accept=".agency"></label>
-              <div id="upload"></div>
+              <input id="import-file" class="sr-only" name="file" type="file" accept=".agency">
+              <label for="import-file" id="drop" class="drop"></label>
               <label>Passphrase <input class="input" name="passphrase" type="password" required autocomplete="off"></label>
-              <label class="check"><input type="checkbox" name="home" checked> Restore the home folder, if the export has one. Files with the same name are replaced.</label>
-              <p class="note">Settings and apps are replaced by the export's. Secrets are added, and the export's win where both have one. Then the system rebuilds.</p>
+              <label class="check"><input type="checkbox" name="home" checked><span>Restore the home folder <small>Replaces files with the same name</small></span></label>
               <div class="buttons"><button type="submit" class="button button--primary" data-job>Import</button></div>
             </form>
           </div>
