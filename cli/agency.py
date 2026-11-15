@@ -78,6 +78,23 @@ def tool(name):
     return path
 
 
+def root_exists(path):
+    """Whether a path exists, also inside folders only root can read."""
+    try:
+        return path.exists()
+    except PermissionError:
+        return run(["sudo", "-n", "test", "-e", path], check=False, capture=True).returncode == 0
+
+
+def root_read(path):
+    """A file's text, also when only root can read it; "" if it is missing."""
+    try:
+        return path.read_text() if path.exists() else ""
+    except PermissionError:
+        result = run(["sudo", "-n", "cat", path], check=False, capture=True)
+        return result.stdout if result.returncode == 0 else ""
+
+
 def git(*args, **kw):
     return run(["git", "-C", REPO, *args], **kw)
 
@@ -156,7 +173,7 @@ def ensure_repo():
         die(f"could not fetch {url}. Check the network and try again.")
     setup_identity()
 
-    base = SOURCE_REV.read_text().strip() if SOURCE_REV.exists() else ""
+    base = root_read(SOURCE_REV).strip()
     known = base and git("cat-file", "-e", f"{base}^{{commit}}", check=False, capture=True).returncode == 0
     if not known:
         base = "origin/main"
@@ -208,7 +225,7 @@ def cmd_status(args):
     say(f"  secrets    {', '.join(names) if names else 'none'}")
 
     notes = []
-    if FIRSTBOOT.exists():
+    if root_exists(FIRSTBOOT):
         notes.append("First-start setup is still running: journalctl -fu agency-firstboot")
     if run(["sudo", "-n", "test", "-e", RECOVERY_KEY], check=False, capture=True).returncode == 0:
         notes.append("The disk recovery key is still on disk. A person should run: agency recovery-key")

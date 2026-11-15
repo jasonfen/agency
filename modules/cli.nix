@@ -34,4 +34,8 @@ let
 in
 {
   environment.systemPackages = [ agency ];
+
+  # agency's state folder is readable by the agent account; the private
+  # parts inside it (first-boot notes, a Tailscale key) keep their own modes.
+  systemd.tmpfiles.rules = [ "d /var/lib/agency 0755 root root -" ];
 }

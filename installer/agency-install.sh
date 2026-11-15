@@ -574,7 +574,8 @@ sed -i -E \
 
 # Notes for the first start (see modules/firstboot.nix).
 notes=/mnt/var/lib/agency/firstboot
-install -d -m 700 /mnt/var/lib/agency "$notes"
+install -d -m 755 /mnt/var/lib/agency
+install -d -m 700 "$notes"
 if [ "$system_list" != "$AGENCY_BAKED_SYSTEM" ]; then touch "$notes/rebuild"; fi
 
 # The machine's name. A prebuilt system with no name of its own reads it
