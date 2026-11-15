@@ -275,5 +275,6 @@ h2 { font: 700 2rem / 1.1 var(--font-display); }
 }
 
 /* GitHub sign-in: the device code, big enough to read across a room. */
-.device { padding: 0.875rem 1rem 1rem; border-bottom: var(--hairline); display: grid; gap: 0.5rem; }
+.device { padding: 0.875rem 1rem 1rem; border-bottom: var(--hairline); display: flex; align-items: center; justify-content: space-between; gap: 0.875rem; }
+.device-text { display: grid; gap: 0.5rem; min-width: 0; }
 .device-code { font-size: 1.75rem; letter-spacing: 0.08em; font-weight: 500; user-select: all; }

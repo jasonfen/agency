@@ -183,9 +183,12 @@ function loginPanel(id) {
   if (l.state === "failed") return `<div class="device"><p class="row-detail">${esc(l.error)}</p></div>`;
   const shown = l.url.replace(/^https:\/\//, "").replace(/\?.*$/, "");
   return `<div class="device">
-    <p>Open <a href="${esc(l.url)}" target="_blank" rel="noopener">${esc(shown)}</a> and enter:</p>
-    <p class="device-code mono">${esc(l.code)}</p>
-    <p class="row-detail">This updates by itself when you are done. <button type="button" class="button" data-login-cancel="${id}">Cancel</button></p>
+    <div class="device-text">
+      <p>Open <a href="${esc(l.url)}" target="_blank" rel="noopener">${esc(shown)}</a> and enter:</p>
+      <p class="device-code mono">${esc(l.code)}</p>
+      <p class="row-detail">This updates by itself when you are done.</p>
+    </div>
+    <button type="button" class="button" data-login-cancel="${id}">Cancel</button>
   </div>`;
 }
 
