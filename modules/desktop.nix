@@ -83,12 +83,15 @@ in
         environment.DISPLAY = ":%i";
       };
 
-  # Web viewer for the desktop. Its start script needs `ps`.
+  # Web viewer for the desktop. Its start script needs `ps` and `hostname`.
   systemd.services."agency-novnc@" =
     lib.recursiveUpdate (part "Browser access to desktop :%i (noVNC)" "${novnc} %i")
       {
         after = [ "agency-display@%i.service" ];
-        path = [ pkgs.procps ];
+        path = [
+          pkgs.procps
+          pkgs.inetutils # hostname
+        ];
       };
 
   # Starts desktops :1 to :count at boot.
