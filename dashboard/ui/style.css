@@ -31,7 +31,8 @@
 }
 
 * { box-sizing: border-box; margin: 0; }
-html { scroll-behavior: smooth; scroll-padding-top: 1rem; }
+/* The scrollbar's room is kept, so the page does not narrow when it grows. */
+html { scroll-behavior: smooth; scroll-padding-top: 1rem; scrollbar-gutter: stable; }
 
 body {
   background: var(--canvas);
@@ -379,6 +380,9 @@ body.has-dock { padding-bottom: 7rem; }
 }
 .input::placeholder { color: var(--line); }
 
+/* Settings on a first visit, until the server answers (settings.js). */
+.is-waiting .main { visibility: hidden; }
+
 /* --------------------------------------------------------------- system */
 
 .facts { display: grid; grid-template-columns: 7.5rem minmax(0, 1fr); row-gap: 0.625rem; column-gap: 1rem; font-size: 0.9375rem; margin-bottom: 1rem; }
@@ -388,6 +392,8 @@ body.has-dock { padding-bottom: 7rem; }
 
 @media (max-width: 52rem) {
   .bar { padding: 0.875rem 1rem; }
+  /* The login goes on its own line: keep the line before it is known. */
+  .who { flex-basis: 100%; min-height: 1.3125rem; }
   .frame { display: block; }
   .nav {
     flex-direction: row;

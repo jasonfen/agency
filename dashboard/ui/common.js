@@ -96,15 +96,27 @@ function showNotice(text) {
     : "");
 }
 
+// What the server said last, kept in the browser, so a page draws its
+// sections at once instead of growing them when the answer comes.
+// recall(key) gives it back, or null.
+function remember(key, value) {
+  try { localStorage.setItem(`agency-${key}`, JSON.stringify(value)); } catch {}
+}
+function recall(key) {
+  try { return JSON.parse(localStorage.getItem(`agency-${key}`)); } catch { return null; }
+}
+
+// s.state is left out when drawing from memory: the pill says Loading.
 function drawHeader(s) {
   $("#hostname").textContent = s.hostname;
+  setHTML($("#who"), `Signed in through Tailscale as <span class="mono">${esc(s.login)}</span>`);
+  if (!s.state) return;
   document.title = "agency";
   const pill = $("#pill");
   const labels = { running: "Running", degraded: "Something failed", starting: "Starting", initializing: "Starting", stopping: "Stopping" };
   pill.className = "pill " + (s.state === "running" ? "is-good" : s.state === "degraded" ? "is-bad" : "");
   $("#pill-text").textContent = labels[s.state] || s.state;
   pill.title = s.state === "degraded" ? "A service failed. Over SSH: systemctl --failed" : "";
-  setHTML($("#who"), `Signed in through Tailscale as <span class="mono">${esc(s.login)}</span>`);
 }
 
 // ----------------------------------------------------------------- the dock

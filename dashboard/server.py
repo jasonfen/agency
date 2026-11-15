@@ -825,11 +825,11 @@ class Handler(BaseHTTPRequestHandler):
 
     # --- replies
 
-    def send(self, status, body, ctype, extra=None):
+    def send(self, status, body, ctype, extra=None, cache="no-store"):
         self.send_response(status)
         self.send_header("Content-Type", ctype)
         self.send_header("Content-Length", str(len(body)))
-        self.send_header("Cache-Control", "no-store")
+        self.send_header("Cache-Control", cache)
         self.send_header("X-Frame-Options", "SAMEORIGIN")
         self.send_header("X-Content-Type-Options", "nosniff")
         for k, v in (extra or {}).items():
@@ -841,12 +841,12 @@ class Handler(BaseHTTPRequestHandler):
     def send_json(self, data, status=200):
         self.send(status, json.dumps(data).encode(), "application/json")
 
-    def send_file(self, path):
+    def send_file(self, path, cache="no-store"):
         try:
             data = path.read_bytes()
         except OSError:
             return self.send_json({"error": "not found"}, 404)
-        self.send(200, data, TYPES.get(path.suffix, "application/octet-stream"))
+        self.send(200, data, TYPES.get(path.suffix, "application/octet-stream"), cache=cache)
 
     def refuse(self, why):
         page = f"""<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width">
@@ -898,7 +898,9 @@ class Handler(BaseHTTPRequestHandler):
         if path.startswith("/fonts/"):
             name = path[len("/fonts/"):]
             if re.match(r"^[a-z0-9-]+\.woff2$", name):
-                return self.send_file(FONTS / name)
+                # The faces never change, and a page that waits for them
+                # draws its text twice: keep them for a week.
+                return self.send_file(FONTS / name, cache="max-age=604800")
             return self.send_json({"error": "not found"}, 404)
         if path == "/api/screen":
             return self.send_json(screen())

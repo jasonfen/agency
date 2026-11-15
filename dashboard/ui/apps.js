@@ -106,6 +106,7 @@ function drawAll() {
 async function loadCatalog() {
   try {
     catalog = await api("/api/apps");
+    if (!catalog.error) remember("apps", catalog);
   } catch {
     catalog = { apps: [], error: "the server did not answer" };
   }
@@ -213,6 +214,17 @@ $("#search").addEventListener("input", (ev) => {
 addEventListener("beforeunload", (ev) => {
   if (queue.size) ev.preventDefault();
 });
+
+// Draw the catalog the last visit saw until the server answers, so the
+// page has its size from the start. The bar waits for the server.
+const last = recall("apps");
+if (last && !last.error) {
+  catalog = last;
+  drawGroups();
+  drawCatalog();
+}
+const lastState = recall("state");
+if (lastState) drawHeader({ ...lastState, state: null });
 
 refresh();
 loadCatalog();

@@ -6,6 +6,14 @@
   <title>Settings - agency</title>
   <link rel="icon" type="image/svg+xml" href="/favicon.svg">
   <link rel="stylesheet" href="style.css">
+  <!-- The faces above the fold, fetched with the stylesheet, not after it. -->
+  <link rel="preload" href="/fonts/ibm-plex-sans-latin-400-normal.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="preload" href="/fonts/ibm-plex-sans-latin-600-normal.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="preload" href="/fonts/pixelify-sans-latin-700-normal.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="preload" href="/fonts/ibm-plex-mono-latin-400-normal.woff2" as="font" type="font/woff2" crossorigin>
+  <!-- The scripts draw what the last visit saw; the first paint waits for them. -->
+  <script src="common.js" defer blocking="render"></script>
+  <script src="settings.js" defer blocking="render"></script>
 </head>
 <body>
   <svg width="0" height="0" aria-hidden="true" style="position:absolute">
@@ -93,7 +101,8 @@
             <h3>Import</h3>
             <form id="import-form" class="form" autocomplete="off">
               <input id="import-file" class="sr-only" name="file" type="file" accept=".agency">
-              <label for="import-file" id="drop" class="drop"></label>
+              <label for="import-file" id="drop" class="drop is-empty"><svg class="drop-icon" viewBox="0 0 8 8" shape-rendering="crispEdges" aria-hidden="true">
+  <path d="M3 0h2v1h1v1h1v1h-2v3h-2v-3h-2v-1h1v-1h1zM0 7h8v1h-8z"/></svg><span class="drop-text"><strong>Choose an export file</strong><span>or drop it here</span></span></label>
               <label>Passphrase <input class="input" name="passphrase" type="password" required autocomplete="off"></label>
               <label class="check"><input type="checkbox" name="home" checked><span>Restore the home folder <small>Replaces files with the same name</small></span></label>
               <div class="buttons"><button type="submit" class="button button--primary" data-job>Import</button></div>
@@ -110,7 +119,5 @@
     <div id="dock-body"></div>
     <pre id="dock-log" class="log dock-log" hidden></pre>
   </aside>
-  <script src="common.js"></script>
-  <script src="settings.js"></script>
 </body>
 </html>

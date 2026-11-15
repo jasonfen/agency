@@ -184,12 +184,17 @@ async function refresh() {
       state = s;
       job = s.job;
       drawDock(job);
+      remember("state", { ...s, job: null });
     }
-    if (!t.error) info = t;
+    if (!t.error) {
+      info = t;
+      remember("transfer", t);
+    }
     draw();
   } catch {
     // The dashboard restarts during some rebuilds. Try again shortly.
   }
+  document.body.classList.remove("is-waiting");
   timer = setTimeout(refresh, running() ? 1500 : 6000);
 }
 
@@ -369,6 +374,17 @@ addEventListener("beforeunload", (ev) => {
   if (uploading) ev.preventDefault();
 });
 
+// Draw what the last visit saw until the server answers, so the sections
+// have their size from the start. The pill says Loading until then.
+state = recall("state");
+info = recall("transfer");
+if (state) drawHeader({ ...state, state: null });
+// A first visit has nothing to draw from: the sections wait for the
+// server (two seconds at most), rather than grow while being read.
+else {
+  document.body.classList.add("is-waiting");
+  setTimeout(() => document.body.classList.remove("is-waiting"), 2000);
+}
 draw();
 refresh();
 // A sign-in may already be under way, from before a reload or another tab.

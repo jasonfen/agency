@@ -6,6 +6,14 @@
   <title>agency</title>
   <link rel="icon" type="image/svg+xml" href="/favicon.svg">
   <link rel="stylesheet" href="style.css">
+  <!-- The faces above the fold, fetched with the stylesheet, not after it. -->
+  <link rel="preload" href="/fonts/ibm-plex-sans-latin-400-normal.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="preload" href="/fonts/ibm-plex-sans-latin-600-normal.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="preload" href="/fonts/pixelify-sans-latin-700-normal.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="preload" href="/fonts/ibm-plex-mono-latin-400-normal.woff2" as="font" type="font/woff2" crossorigin>
+  <!-- The scripts draw what the last visit saw; the first paint waits for them. -->
+  <script src="common.js" defer blocking="render"></script>
+  <script src="app.js" defer blocking="render"></script>
 </head>
 <body>
   <svg width="0" height="0" aria-hidden="true" style="position:absolute">
@@ -43,7 +51,16 @@
           <h2>Desktops</h2>
           <button type="button" class="button" data-action="desktop-add" data-job>Add a desktop</button>
         </div>
-        <div id="desktop-list" class="cards"></div>
+        <!-- Desktop :1 is always there: its card holds the space until the list comes. -->
+        <div id="desktop-list" class="cards">
+          <article class="card">
+            <div class="shot"></div>
+            <div class="card-foot">
+              <div><p class="card-name">Desktop :1</p><p class="card-detail">&nbsp;</p></div>
+              <div class="buttons"><span class="button button--solid" style="visibility: hidden">Open</span></div>
+            </div>
+          </article>
+        </div>
       </section>
 
       <section id="terminal" class="section">
@@ -73,7 +90,5 @@
     <div id="dock-body"></div>
     <pre id="dock-log" class="log dock-log" hidden></pre>
   </aside>
-  <script src="common.js"></script>
-  <script src="app.js"></script>
 </body>
 </html>

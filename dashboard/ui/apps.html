@@ -6,6 +6,14 @@
   <title>Apps - agency</title>
   <link rel="icon" type="image/svg+xml" href="/favicon.svg">
   <link rel="stylesheet" href="style.css">
+  <!-- The faces above the fold, fetched with the stylesheet, not after it. -->
+  <link rel="preload" href="/fonts/ibm-plex-sans-latin-400-normal.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="preload" href="/fonts/ibm-plex-sans-latin-600-normal.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="preload" href="/fonts/pixelify-sans-latin-700-normal.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="preload" href="/fonts/ibm-plex-mono-latin-400-normal.woff2" as="font" type="font/woff2" crossorigin>
+  <!-- The scripts draw what the last visit saw; the first paint waits for them. -->
+  <script src="common.js" defer blocking="render"></script>
+  <script src="apps.js" defer blocking="render"></script>
 </head>
 <body>
   <svg width="0" height="0" aria-hidden="true" style="position:absolute">
@@ -55,7 +63,5 @@
     <pre id="dock-log" class="log dock-log" hidden></pre>
   </aside>
 
-  <script src="common.js"></script>
-  <script src="apps.js"></script>
 </body>
 </html>

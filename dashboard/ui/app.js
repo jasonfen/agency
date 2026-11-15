@@ -94,7 +94,10 @@ async function refresh() {
   try {
     const s = await api("/api/state");
     if (s.error) showNotice(s.error);
-    else draw(s);
+    else {
+      draw(s);
+      remember("state", { ...s, job: null });
+    }
   } catch {
     // The dashboard restarts during some rebuilds. Try again shortly.
   }
@@ -104,6 +107,7 @@ async function refresh() {
 async function loadApps() {
   try {
     appList = await api("/api/apps");
+    if (!appList.error) remember("apps", appList);
   } catch {
     appList = { apps: [], error: "the server did not answer" };
   }
@@ -195,6 +199,17 @@ document.addEventListener("click", async (ev) => {
       return;
   }
 });
+
+// Draw what the last visit saw until the server answers, so the sections
+// have their size from the start. The pill says Loading until then.
+const last = recall("state");
+if (last) {
+  drawHeader({ ...last, state: null });
+  drawUpdates(["behind", "unlinked"].includes(last.updates?.status) ? last.updates : null);
+  drawDesktops(last.desktops || []);
+}
+appList = recall("apps");
+drawApps();
 
 refresh();
 loadApps();
