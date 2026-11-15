@@ -195,7 +195,7 @@ document.addEventListener("click", async (ev) => {
       return showNotice("");
     case "term-shell":
       openTerminal("/terminal/");
-      $("#term-note").textContent = "A shell on the machine, in your browser. Start an agent here, or attach to your tmux sessions.";
+      $("#term-note").textContent = "A tmux shell, in your browser—how cool!";
       return;
   }
 });
