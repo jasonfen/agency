@@ -20,6 +20,8 @@ Your home directory is yours: `bun add -g` (use Bun over npm where you can; `npm
 
 `agency apps add|remove <id>` switches optional software (catalog: `apps.nix`).
 
+When you add an app to the catalog, add its logo as `dashboard/ui/logos/<id>.svg`. Take it from [svgl](https://svgl.app) first (its API blocks scripts, so fetch from `static/library/` in the `pheralb/svgl` GitHub repo), else Simple Icons or the project itself, and note the source in `dashboard/ui/logos/README.md`.
+
 ## Desktops
 
 GUI apps run on virtual desktops (`:1`, `:2`…). Start one with `gui chromium`. Humans watch them at the addresses `agency desktop list` prints. See the `agency-desktop` skill.
