@@ -261,6 +261,18 @@ function openTerminal(src) {
   const frame = $("#term");
   if (frame.getAttribute("src") !== src) frame.src = src;
 }
+// In tmux, xterm.js turns the wheel into arrow keys, which walk the shell's
+// history. The wheel scrolls this page instead. The frame is same-origin.
+$("#term").addEventListener("load", (ev) => {
+  let win;
+  try { win = ev.target.contentWindow; win.document; } catch { return; }
+  win.addEventListener("wheel", (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    const unit = e.deltaMode === 1 ? 16 : e.deltaMode === 2 ? innerHeight : 1;
+    scrollBy(e.deltaX * unit, e.deltaY * unit);
+  }, { capture: true, passive: false });
+});
 new IntersectionObserver((entries, obs) => {
   if (entries.some((e) => e.isIntersecting)) {
     if (!$("#term").getAttribute("src")) openTerminal("/terminal/");
