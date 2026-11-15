@@ -34,6 +34,7 @@
 
   <div class="frame">
     <nav class="nav" aria-label="Sections">
+      <a href="#system">System</a>
       <a href="#desktops">Desktops</a>
       <a href="#terminal">Terminal</a>
       <a href="#apps">Apps</a>
@@ -44,6 +45,23 @@
       <section id="overview" aria-label="Notices" class="section">
         <div id="notice" role="alert"></div>
         <div id="updates" class="banner"></div>
+      </section>
+
+      <section id="system" class="section">
+        <h2>System</h2>
+        <div class="vitals">
+          <article class="card vital">
+            <div class="vital-head"><p class="card-name">CPU</p><p class="vital-now mono" id="cpu-now">&nbsp;</p></div>
+            <div class="spark" id="cpu-chart" data-label="CPU"></div>
+            <p class="card-detail" id="cpu-detail">&nbsp;</p>
+          </article>
+          <article class="card vital">
+            <div class="vital-head"><p class="card-name">Memory</p><p class="vital-now mono" id="mem-now">&nbsp;</p></div>
+            <div class="spark" id="mem-chart" data-label="Memory"></div>
+            <p class="card-detail" id="mem-detail">&nbsp;</p>
+          </article>
+        </div>
+        <div id="disk-list" class="list"><p class="row muted">&nbsp;</p></div>
       </section>
 
       <section id="desktops" class="section">

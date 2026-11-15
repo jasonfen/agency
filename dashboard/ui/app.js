@@ -1,7 +1,7 @@
 // agency dashboard. Plain JavaScript; the server is dashboard/server.py.
 //
 // The page asks for /api/state every few seconds and draws each section
-// from it: desktops, the terminal and the apps that are on. Accounts,
+// from it: the system's vitals, desktops, the terminal and the apps that are on. Accounts,
 // secrets and the system are in Settings (settings.js). Changes start a job
 // on the server; while one runs, the others wait and it shows in the bar at
 // the bottom (common.js).
@@ -46,6 +46,119 @@ function drawDesktops(list) {
   }
 }
 
+// System: CPU and memory over the last ten minutes, and every disk.
+
+const pct = (n) => `${Math.round(n)}%`;
+
+function uptimeText(sec) {
+  const d = Math.floor(sec / 86400);
+  const h = Math.floor((sec % 86400) / 3600);
+  const m = Math.floor((sec % 3600) / 60);
+  return d ? `${d} d ${h} h` : h ? `${h} h ${m} min` : `${m} min`;
+}
+
+// A chart of percentages, 0 to 100, over a fixed window that ends at the
+// newest sample. points: [[time, percent, text for the tooltip], ...].
+const charts = {};
+
+function chart(el, points, span) {
+  let c = charts[el.id];
+  if (!c) {
+    el.innerHTML = `<svg viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">
+        <line class="spark-grid" x1="0" x2="100" y1="50" y2="50" vector-effect="non-scaling-stroke"/>
+        <line class="spark-grid" x1="0" x2="100" y1="0" y2="0" vector-effect="non-scaling-stroke"/>
+        <path class="spark-area"/><path class="spark-line" vector-effect="non-scaling-stroke"/>
+      </svg>
+      <span class="spark-tick" style="top:0">100%</span><span class="spark-tick" style="top:50%">50%</span>
+      <span class="spark-axis spark-axis--start">${Math.round(span / 60)} min ago</span>
+      <span class="spark-axis spark-axis--end">now</span>
+      <div class="spark-cross" hidden></div><div class="spark-dot" hidden></div><div class="spark-tip" hidden></div>`;
+    c = charts[el.id] = { points: [], at: null, span };
+    const move = (x) => {
+      const r = el.getBoundingClientRect();
+      c.at = Math.min(1, Math.max(0, (x - r.left) / r.width));
+      hover(el, c);
+    };
+    el.addEventListener("pointermove", (e) => move(e.clientX));
+    el.addEventListener("pointerdown", (e) => move(e.clientX));
+    el.addEventListener("pointerleave", () => { c.at = null; hover(el, c); });
+  }
+  c.points = points;
+  c.end = points.length ? points[points.length - 1][0] : 0;
+  const x = (t) => 100 - ((c.end - t) / span) * 100;
+  const y = (v) => 100 - Math.min(100, Math.max(0, v));
+  const shown = points.filter((p) => c.end - p[0] <= span);
+  const line = shown.map((p, i) => `${i ? "L" : "M"}${x(p[0]).toFixed(2)} ${y(p[1]).toFixed(2)}`).join("");
+  el.querySelector(".spark-line").setAttribute("d", line);
+  el.querySelector(".spark-area").setAttribute("d", shown.length
+    ? `${line}L${x(shown[shown.length - 1][0]).toFixed(2)} 100L${x(shown[0][0]).toFixed(2)} 100Z` : "");
+  const last = shown[shown.length - 1];
+  el.setAttribute("role", "img");
+  el.setAttribute("aria-label", last ? `${el.dataset.label} over the last ${Math.round(span / 60)} minutes, now ${pct(last[1])}` : el.dataset.label);
+  hover(el, c);
+}
+
+// The crosshair and tooltip at the sample nearest the pointer.
+function hover(el, c) {
+  const [cross, dot, tip] = [".spark-cross", ".spark-dot", ".spark-tip"].map((s) => el.querySelector(s));
+  const t = c.at === null ? null : c.end - (1 - c.at) * c.span;
+  let best = null;
+  if (t !== null) for (const p of c.points) if (!best || Math.abs(p[0] - t) < Math.abs(best[0] - t)) best = p;
+  cross.hidden = dot.hidden = tip.hidden = !best;
+  if (!best) return;
+  const left = 100 - ((c.end - best[0]) / c.span) * 100;
+  cross.style.left = dot.style.left = `${left}%`;
+  dot.style.top = `${100 - Math.min(100, best[1])}%`;
+  const when = c.end - best[0] < 5 ? "now"
+    : new Date(best[0] * 1000).toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit", second: "2-digit" });
+  tip.innerHTML = `<strong>${esc(best[2])}</strong> · ${esc(when)}`;
+  // Keep the tooltip inside the card at the edges.
+  tip.style.left = `${Math.min(85, Math.max(15, left))}%`;
+}
+
+function drawSystem(v) {
+  if (!v) return;
+  const span = 600;
+  const h = v.history || [];
+  const now = h[h.length - 1];
+  const mem = v.memory;
+
+  $("#cpu-now").textContent = now ? pct(now[1]) : "–";
+  chart($("#cpu-chart"), h.map((p) => [p[0], p[1], pct(p[1])]), span);
+  const cpuBits = [`${v.cores} cores`];
+  if (v.load) cpuBits.push(`load ${v.load[0].toFixed(2)}`);
+  if (v.temp) cpuBits.push(`${v.temp} °C`);
+  if (v.uptime) cpuBits.push(`up ${uptimeText(v.uptime)}`);
+  $("#cpu-detail").textContent = cpuBits.join(" · ");
+
+  if (mem) {
+    $("#mem-now").textContent = pct((100 * mem.used) / mem.total);
+    chart($("#mem-chart"), h.filter((p) => p[2] !== null)
+      .map((p) => [p[0], (100 * p[2]) / mem.total, `${gb(p[2])} GB`]), span);
+    const bits = [`${gb(mem.used)} of ${gb(mem.total)} GB used`];
+    if (v.swap) bits.push(`swap ${gb(v.swap.used)} of ${gb(v.swap.total)} GB`);
+    $("#mem-detail").textContent = bits.join(" · ");
+  }
+
+  const disks = v.disks || [];
+  setHTML($("#disk-list"), disks.length ? disks.map((d) => {
+    const kind = [d.kind, d.removable ? "removable" : "", `${gb(d.size)} GB`].filter(Boolean).join(" · ");
+    const where = d.system ? "System disk" : d.mounts.length ? `Mounted at ${d.mounts[0]}` : "Not mounted";
+    const share = d.fsSize ? (100 * d.used) / d.fsSize : 0;
+    const full = share >= 90;
+    return `<div class="row disk">
+      <div class="row-main">
+        <p class="row-name">${esc(d.model || d.name)}</p>
+        <p class="row-detail"><span class="mono">${esc(d.name)}</span> · ${esc(kind)} · ${esc(where)}</p>
+      </div>
+      <div class="disk-end">
+        <p class="disk-use">${d.fsSize ? `${gb(d.used)} of ${gb(d.fsSize)} GB used${full ? " · <strong>almost full</strong>" : ""}` : `<span class="muted">Nothing mounted from it</span>`}</p>
+        <div class="meter${full ? " is-full" : ""}${d.fsSize ? "" : " is-empty"}" role="meter" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${Math.round(share)}" aria-label="${esc(d.model || d.name)} space used"><div class="meter-fill" style="width:${share.toFixed(1)}%"></div></div>
+      </div>
+    </div>`;
+  }).join("") : `<p class="row muted">No disks found.</p>`);
+}
+
 // The home page lists the apps that are on; the catalog (/apps) has the rest.
 function drawApps() {
   if (!appList) return;
@@ -75,6 +188,7 @@ function draw(s) {
   drawDock(s.job);
   // Here only when there is something to do; Settings has the rest.
   drawUpdates(["behind", "unlinked"].includes(s.updates.status) ? s.updates : null, jobRunning);
+  drawSystem(s.vitals);
   drawDesktops(s.desktops);
   drawApps();
   for (const b of document.querySelectorAll("[data-job]")) b.disabled = jobRunning;
@@ -206,6 +320,7 @@ const last = recall("state");
 if (last) {
   drawHeader({ ...last, state: null });
   drawUpdates(["behind", "unlinked"].includes(last.updates?.status) ? last.updates : null);
+  drawSystem(last.vitals);
   drawDesktops(last.desktops || []);
 }
 appList = recall("apps");

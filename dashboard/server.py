@@ -313,6 +313,140 @@ def memory():
         return None
 
 
+# ----------------------------------------------------------------- vitals ---
+# CPU and memory, sampled every few seconds into a short history, so the
+# home page draws a full chart the moment it opens. Disks come from lsblk.
+
+class Vitals:
+    EVERY = 3        # seconds between samples
+    KEEP = 200       # samples kept: ten minutes
+
+    def __init__(self):
+        self.lock = threading.Lock()
+        self.samples = []   # [time, cpu %, memory used]
+        self.last = None    # (busy, total) jiffies at the last sample
+
+    @staticmethod
+    def jiffies():
+        fields = [int(x) for x in Path("/proc/stat").read_text().split("\n", 1)[0].split()[1:]]
+        idle = fields[3] + fields[4]  # idle + iowait
+        total = sum(fields[:8])       # guest time is already in user
+        return total - idle, total
+
+    def sample(self):
+        busy, total = self.jiffies()
+        mem = memory()
+        if self.last and total > self.last[1]:
+            cpu = 100 * (busy - self.last[0]) / (total - self.last[1])
+            with self.lock:
+                self.samples.append([round(time.time()), round(cpu, 1), mem["used"] if mem else None])
+                del self.samples[:-self.KEEP]
+        self.last = (busy, total)
+
+    def loop(self):
+        while True:
+            try:
+                self.sample()
+            except (OSError, ValueError, IndexError):
+                pass
+            time.sleep(self.EVERY)
+
+    def get(self):
+        with self.lock:
+            history = list(self.samples)
+        try:
+            load = [round(x, 2) for x in os.getloadavg()]
+        except OSError:
+            load = None
+        try:
+            uptime = float(Path("/proc/uptime").read_text().split()[0])
+        except (OSError, ValueError):
+            uptime = None
+        return {
+            "every": self.EVERY,
+            "history": history,
+            "cores": os.cpu_count(),
+            "load": load,
+            "temp": cpu_temp(),
+            "uptime": uptime,
+            "memory": memory(),
+            "swap": swap(),
+            "disks": disks(),
+        }
+
+
+vitals = Vitals()
+
+
+def swap():
+    try:
+        info = dict(line.split(":", 1) for line in Path("/proc/meminfo").read_text().splitlines())
+        total = int(info["SwapTotal"].split()[0]) * 1024
+        free = int(info["SwapFree"].split()[0]) * 1024
+        return {"used": total - free, "total": total} if total else None
+    except (OSError, KeyError, ValueError):
+        return None
+
+
+def cpu_temp():
+    """The CPU package's temperature in °C, or None."""
+    for hwmon in Path("/sys/class/hwmon").glob("hwmon*"):
+        try:
+            name = (hwmon / "name").read_text().strip()
+        except OSError:
+            continue
+        if name not in ("coretemp", "k10temp", "zenpower"):
+            continue
+        try:
+            return round(int((hwmon / "temp1_input").read_text()) / 1000)
+        except (OSError, ValueError):
+            continue
+    return None
+
+
+@cached(15)
+def disks():
+    """Whole disks (not partitions): size, model and the space used on
+    the filesystems mounted from them."""
+    ok, out, _ = sh("lsblk", "--json", "--bytes", "--output",
+                    "NAME,SIZE,TYPE,MODEL,TRAN,RM,FSUSED,FSSIZE,MOUNTPOINTS", timeout=10)
+    if not ok:
+        return []
+    try:
+        tree = json.loads(out)["blockdevices"]
+    except (ValueError, KeyError):
+        return []
+    found = []
+    for d in tree:
+        if d.get("type") != "disk" or re.match(r"(zram|loop|ram)\d", d["name"]):
+            continue
+        used = size = 0
+        mounts = []
+        stack = list(d.get("children") or [])
+        while stack:
+            node = stack.pop()
+            stack.extend(node.get("children") or [])
+            points = [m for m in (node.get("mountpoints") or []) if m and m.startswith("/")]
+            if points and node.get("fssize"):
+                used += int(node.get("fsused") or 0)
+                size += int(node["fssize"])
+                mounts.extend(points)
+        found.append({
+            "name": d["name"],
+            "model": (d.get("model") or "").strip(),
+            "kind": "USB" if d.get("tran") == "usb" else "NVMe" if d.get("tran") == "nvme"
+                    else "SATA" if d.get("tran") == "sata" else "",
+            "removable": bool(d.get("rm")),
+            "size": int(d.get("size") or 0),
+            "used": used,
+            "fsSize": size,
+            "system": "/" in mounts,
+            "mounts": sorted(mounts, key=len),
+        })
+    found.sort(key=lambda x: (not x["system"], x["name"]))
+    return found
+
+
 @cached(30)
 def recovery_key_present():
     ok, _, _ = sh("sudo", "-n", "test", "-e", RECOVERY_KEY, timeout=10)
@@ -321,12 +455,9 @@ def recovery_key_present():
 
 def system():
     gen, made = generation()
-    disk = shutil.disk_usage("/")
     return {
         "generation": gen,
         "generationTime": made,
-        "disk": {"used": disk.used, "total": disk.total},
-        "memory": memory(),
         "recoveryKey": recovery_key_present(),
     }
 
@@ -1024,6 +1155,7 @@ class Handler(BaseHTTPRequestHandler):
                 "secrets": secrets(),
                 "system": system(),
                 "updates": updates.state,
+                "vitals": vitals.get(),
                 "job": job,
                 "queue": app_queue.get(),
             })
@@ -1282,6 +1414,7 @@ class Handler(BaseHTTPRequestHandler):
 
 if __name__ == "__main__":
     threading.Thread(target=updates.loop, daemon=True).start()
+    threading.Thread(target=vitals.loop, daemon=True).start()
     threading.Thread(target=app_queue.loop, daemon=True).start()
     host = os.environ.get("AGENCY_DASHBOARD_HOST", "127.0.0.1")
     print(f"agency dashboard on http://{host}:{PORT}", file=sys.stderr, flush=True)

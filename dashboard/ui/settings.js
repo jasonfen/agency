@@ -106,8 +106,6 @@ function drawSystem(s) {
   const rows = [];
   const made = day(s.generationTime);
   rows.push(["Version", s.generation ? `Generation ${s.generation}${made ? `, updated ${made}` : ""}` : "Unknown"]);
-  rows.push(["Disk", `${gb(s.disk.used)} of ${gb(s.disk.total)} GB used`]);
-  if (s.memory) rows.push(["Memory", `${gb(s.memory.used)} of ${gb(s.memory.total)} GB used`]);
   rows.push(["Recovery key", s.recoveryKey
     ? "Still on the disk. To save it and delete it, run <code>agency recovery-key</code> over SSH."
     : `<span class="on">Removed from the disk</span>`]);
