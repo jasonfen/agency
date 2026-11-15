@@ -62,6 +62,12 @@ in
     };
   };
 
+  # No text login on tty1. NixOS still lists getty@tty1 as wanted, so every
+  # `nixos-rebuild switch` started it, and because cage conflicts with it,
+  # the switch stopped the status screen and left the panel black.
+  systemd.services."getty@tty1".enable = false;
+  systemd.services."autovt@tty1".enable = false;
+
   # If the browser or cage stops, start them again.
   systemd.services."cage-tty1" = {
     after = [ "agency-dashboard.service" ];
