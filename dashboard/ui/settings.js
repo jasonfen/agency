@@ -85,7 +85,7 @@ async function refresh() {
       drawHeader(s);
       document.title = "Settings - agency";
       job = s.job;
-      drawJob(job);
+      drawDock(job);
     }
     if (!t.error) info = t;
     draw();

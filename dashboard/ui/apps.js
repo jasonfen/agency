@@ -2,8 +2,8 @@
 // to add or remove it.
 //
 // A click never moves the page. The card shows what is happening to its
-// app, and a bar at the bottom of the window shows the running change and
-// its log. Clicks while a change runs wait in a queue; when the change
+// app, and the bar at the bottom of the window (common.js) shows the
+// running change and its log. Clicks while a change runs wait in a queue; when the change
 // finishes, everything queued goes as one change (one rebuild at most).
 
 let catalog = null; // { apps: [...], error }
@@ -11,7 +11,6 @@ let job = null; // the server's current job, or null
 let lastFinished = null; // id of the last job we saw finish
 let group = "All";
 let query = "";
-let logOpen = false;
 const queue = new Map(); // app id -> "add" | "remove"
 
 const running = () => !!(job && job.state === "running");
@@ -88,60 +87,18 @@ function drawCatalog() {
     </section>`).join("") || `<p class="muted">No app matches.</p>`);
 }
 
-// The bar at the bottom: the running (or just finished) change, what is
-// queued after it, and the log on request.
-function drawDock() {
+// The bar at the bottom (common.js), with what is queued after the job.
+// The catalog's notices show in it too.
+function drawCatalogDock() {
   const adds = [...queue].filter(([, v]) => v === "add").map(([k]) => k);
   const removes = [...queue].filter(([, v]) => v === "remove").map(([k]) => k);
   const next = [adds.length && `add ${listed(adds)}`, removes.length && `remove ${listed(removes)}`].filter(Boolean).join(", ");
-  const show = job || queue.size || $("#notice").innerHTML;
-  $("#dock").hidden = !show;
-  document.body.classList.toggle("has-dock", !!show);
-  if (!show) return setHTML($("#dock-body"), "");
-
-  let mark = "", title = "", detail = "";
-  const lastLine = job?.log?.filter((l) => l.trim()).at(-1) || "";
-  if (running()) {
-    mark = "is-running";
-    title = esc(job.title);
-    detail = lastLine ? `<span class="mono">${esc(lastLine)}</span>` : "Starting.";
-  } else if (job?.state === "done") {
-    mark = "is-done";
-    title = `Done: ${esc(job.title.replace(/^./, (c) => c.toLowerCase()))}`;
-  } else if (job?.state === "failed") {
-    mark = "is-failed";
-    title = `It failed: ${esc(job.title.replace(/^./, (c) => c.toLowerCase()))}`;
-    detail = "The log says why.";
-  } else {
-    title = "Starting the change.";
-  }
-  const then = next ? `<p class="dock-next">${running() ? "Next" : "Waiting to"}: ${esc(next)}</p>` : "";
-  const buttons = [
-    job ? `<button type="button" class="button" data-action="log">${logOpen ? "Hide the log" : "Show the log"}</button>` : "",
-    job && !running() ? `<button type="button" class="button" data-action="job-dismiss">Close</button>` : "",
-  ].join("");
-  setHTML($("#dock-body"), `<div class="dock-row">
-      <span class="job-mark dock-mark ${mark}"></span>
-      <div class="dock-text">
-        <p class="dock-title">${title}</p>
-        ${detail ? `<p class="dock-detail">${detail}</p>` : ""}
-        ${then}
-      </div>
-      <div class="buttons">${buttons}</div>
-    </div>`);
-  $("#dock").classList.toggle("is-running", running());
-
-  const log = $("#dock-log");
-  log.hidden = !(logOpen && job);
-  if (!log.hidden) {
-    const atEnd = log.scrollHeight - log.scrollTop - log.clientHeight < 24;
-    if (setHTML(log, esc(job.log.join("\n")) || "Starting.") && atEnd) log.scrollTop = log.scrollHeight;
-  }
+  drawDock(job, { next, keep: queue.size || !!$("#notice").innerHTML });
 }
 
 function drawAll() {
   drawCatalog();
-  drawDock();
+  drawCatalogDock();
 }
 
 // ---------------------------------------------------------------- server
@@ -205,7 +162,6 @@ async function refresh() {
       if (job && !running() && job.id !== lastFinished) {
         lastFinished = job.id;
         if (wasRunning || job.kind === "apps") await loadCatalog();
-        if (job.state === "failed") logOpen = true;
       }
       drawAll();
       if (!running() && queue.size) return flushQueue();
@@ -239,16 +195,12 @@ document.addEventListener("click", async (ev) => {
     return drawAll();
   }
   switch (t.dataset.action) {
-    case "log":
-      logOpen = !logOpen;
-      return drawDock();
     case "job-dismiss":
       await api("/api/job/dismiss", {});
-      logOpen = false;
       return refresh();
     case "notice-close":
       showNotice("");
-      return drawDock();
+      return drawCatalogDock();
   }
 });
 

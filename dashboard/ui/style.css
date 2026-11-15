@@ -142,9 +142,9 @@ h2 { font: 700 2rem / 1.1 var(--font-display); }
 /* ------------------------------------------------------------- overview */
 
 #overview { gap: 1rem; }
-#overview:has(#notice:empty):has(#job:empty) { gap: 0; }
+#overview:has(#notice:empty) { gap: 0; }
 
-.banner, .box, .job {
+.banner, .box {
   border: var(--edge);
   background: var(--surface);
 }
@@ -154,13 +154,7 @@ h2 { font: 700 2rem / 1.1 var(--font-display); }
 
 .notice { border: 2px solid var(--danger); background: var(--danger-soft); padding: 0.75rem 1rem; display: flex; justify-content: space-between; gap: 1rem; align-items: center; }
 
-.job-head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 1rem; padding: 0.875rem 1.25rem; border-bottom: var(--edge); }
-.job-title { display: flex; align-items: center; gap: 0.625rem; font-weight: 600; }
 .job-mark { width: 0.625rem; height: 0.625rem; background: var(--line); flex-shrink: 0; }
-.job.is-running .job-mark { animation: blink 1s steps(1) infinite; background: var(--ink); }
-.job.is-done .job-mark { background: var(--accent); }
-.job.is-failed .job-mark { background: var(--danger); }
-.job-result { font-weight: 400; color: var(--muted); }
 .log {
   background: var(--night);
   color: var(--night-text);
@@ -275,8 +269,8 @@ h3 { font: 700 1.375rem / 1.1 var(--font-display); }
 .app-foot .button { font-size: 0.8125rem; padding: 0.375rem 0.75rem; }
 .tag { font: 500 0.75rem var(--font-code); color: var(--muted); text-transform: uppercase; letter-spacing: 0.04em; }
 
-/* The catalog's bar at the bottom of the window: the running change, what
-   waits after it, and its log. */
+/* The bar at the bottom of every page: the running job, what waits after
+   it, and its log. */
 .dock {
   position: fixed;
   left: 0;
@@ -426,7 +420,7 @@ body.has-dock { padding-bottom: 7rem; }
 
 @media (prefers-reduced-motion: reduce) {
   html { scroll-behavior: auto; }
-  .job.is-running .job-mark, .dock-mark.is-running, .spinner { animation: none; }
+  .dock-mark.is-running, .spinner { animation: none; }
   .dock.is-running .dock-progress { animation: none; background: var(--accent); }
 }
 

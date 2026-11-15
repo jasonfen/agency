@@ -2,7 +2,8 @@
 //
 // The page asks for /api/state every few seconds and draws each section
 // from it. Changes (update, apps, secrets, desktops, rollback) start a job
-// on the server; while one runs, the others wait and its log shows at the top.
+// on the server; while one runs, the others wait and it shows in the bar at
+// the bottom (common.js).
 
 let state = null;
 let appList = null;
@@ -185,7 +186,7 @@ function draw(s) {
   const wasRunning = jobRunning;
   jobRunning = !!(s.job && s.job.state === "running");
   drawHeader(s);
-  drawJob(s.job);
+  drawDock(s.job);
   drawUpdates(s.updates);
   drawDesktops(s.desktops);
   drawAccounts(s.accounts);
@@ -273,12 +274,12 @@ $("#term").addEventListener("load", (ev) => {
     scrollBy(e.deltaX * unit, e.deltaY * unit);
   }, { capture: true, passive: false });
 });
-new IntersectionObserver((entries, obs) => {
+whenShown(() => new IntersectionObserver((entries, obs) => {
   if (entries.some((e) => e.isIntersecting)) {
     if (!$("#term").getAttribute("src")) openTerminal("/terminal/");
     obs.disconnect();
   }
-}, { rootMargin: "200px" }).observe($("#terminal"));
+}, { rootMargin: "200px" }).observe($("#terminal")));
 
 // The nav marks the section in view: the last one whose top has passed a
 // line near the top of the window. Sections side by side count as the first.
@@ -405,6 +406,6 @@ $("#secret-form").addEventListener("submit", async (ev) => {
 
 refresh();
 loadApps();
-refreshShots();
+whenShown(refreshShots);
 // A sign-in may already be under way, from before a reload or another tab.
 for (const id of Object.keys(CODE_LOGINS)) pollLogin(id).catch(() => {});

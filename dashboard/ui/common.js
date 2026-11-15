@@ -1,5 +1,5 @@
-// Pieces both dashboard pages use: the home page (app.js) and the app
-// catalog (apps.js). Loaded before either.
+// Pieces every dashboard page uses: home (app.js), the app catalog
+// (apps.js) and settings (settings.js). Loaded before each.
 
 const $ = (sel) => document.querySelector(sel);
 const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
@@ -53,23 +53,101 @@ function drawHeader(s) {
   setHTML($("#who"), `Signed in through Tailscale as <span class="mono">${esc(s.login)}</span>`);
 }
 
-function drawJob(job) {
-  if (!job) return setHTML($("#job"), "");
-  const results = {
-    running: "Running. This page stays up to date.",
-    done: "Done.",
-    failed: job.code === null ? "It stopped before it finished." : "It failed. The log says why.",
-  };
-  const html = `<div class="job is-${job.state}">
-    <div class="job-head">
-      <p class="job-title"><span class="job-mark"></span>${esc(job.title)} <span class="job-result">${results[job.state]}</span></p>
-      ${job.state === "running" ? "" : `<button type="button" class="button" data-action="job-dismiss">Close</button>`}
-    </div>
-    <pre class="log" id="log">${esc(job.log.join("\n")) || "Starting."}</pre>
-  </div>`;
-  const log = $("#log");
-  const atEnd = !log || log.scrollHeight - log.scrollTop - log.clientHeight < 24;
-  if (setHTML($("#job"), html) && atEnd) $("#log").scrollTop = $("#log").scrollHeight;
+// ----------------------------------------------------------------- the dock
+
+// The bar at the bottom of every page: the running (or just finished) job
+// and its log. A job runs on the server, so the bar follows you from page
+// to page; the last job seen is kept for the next page to draw at once.
+// more.next: what waits after it; more.keep: show the bar even with no job.
+
+const DOCK_KEY = "agency-dock";
+let dock = { job: null, logOpen: false, failedSeen: null };
+let dockMore = {};
+try { Object.assign(dock, JSON.parse(sessionStorage.getItem(DOCK_KEY)) || {}); } catch {}
+
+function drawDock(job, more = {}) {
+  const el = $("#dock");
+  if (!el) return;
+  dockMore = more;
+  const running = job?.state === "running";
+  if (job?.state === "failed" && job.id !== dock.failedSeen) { dock.failedSeen = job.id; dock.logOpen = true; }
+  if (!job) dock.logOpen = false;
+  dock.job = job ? { ...job, log: (job.log || []).slice(-300) } : null;
+  try { sessionStorage.setItem(DOCK_KEY, JSON.stringify(dock)); } catch {}
+
+  const show = !!(job || more.next || more.keep);
+  el.hidden = !show;
+  document.body.classList.toggle("has-dock", show);
+  if (!show) return setHTML($("#dock-body"), "");
+
+  const lower = (t) => esc(t.replace(/^./, (c) => c.toLowerCase()));
+  const lastLine = job?.log?.filter((l) => l.trim()).at(-1) || "";
+  let mark = "", title = "Starting the change.", detail = "";
+  if (running) {
+    mark = "is-running";
+    title = esc(job.title);
+    detail = lastLine ? `<span class="mono">${esc(lastLine)}</span>` : "Starting.";
+  } else if (job?.state === "done") {
+    mark = "is-done";
+    title = `Done: ${lower(job.title)}`;
+  } else if (job?.state === "failed") {
+    mark = "is-failed";
+    title = `It failed: ${lower(job.title)}`;
+    detail = job.code === null ? "It stopped before it finished." : "The log says why.";
+  }
+  const then = more.next ? `<p class="dock-next">${running ? "Next" : "Waiting to"}: ${esc(more.next)}</p>` : "";
+  const buttons = job ? `<button type="button" class="button" data-action="dock-log">${dock.logOpen ? "Hide the log" : "Show the log"}</button>
+    ${running ? "" : `<button type="button" class="button" data-action="job-dismiss">Close</button>`}` : "";
+  setHTML($("#dock-body"), `<div class="dock-row">
+      <span class="job-mark dock-mark ${mark}"></span>
+      <div class="dock-text">
+        <p class="dock-title">${title}</p>
+        ${detail ? `<p class="dock-detail">${detail}</p>` : ""}
+        ${then}
+      </div>
+      <div class="buttons">${buttons}</div>
+    </div>`);
+  el.classList.toggle("is-running", running);
+  // Tie the animations to the clock, so a new page picks them up mid-stride.
+  const now = performance.timeOrigin + performance.now();
+  for (const a of el.getAnimations({ subtree: true })) {
+    const d = a.effect?.getTiming().duration;
+    if (typeof d === "number" && d > 0) a.currentTime = now % d;
+  }
+
+  const log = $("#dock-log");
+  log.hidden = !(dock.logOpen && job);
+  if (!log.hidden) {
+    const atEnd = log.scrollHeight - log.scrollTop - log.clientHeight < 24;
+    if (setHTML(log, esc(job.log.join("\n")) || "Starting.") && atEnd) log.scrollTop = log.scrollHeight;
+  }
+}
+
+document.addEventListener("click", (ev) => {
+  if (!ev.target.closest('[data-action="dock-log"]')) return;
+  dock.logOpen = !dock.logOpen;
+  drawDock(dock.job, dockMore);
+});
+
+// Draw the job the last page saw, until the server says otherwise.
+if (dock.job) drawDock(dock.job);
+
+// ----------------------------------------------------------------- preload
+
+// The browser renders the other pages ahead, so moving between them is
+// instant. Nothing on a page should start for real until it is shown: wrap
+// such work in whenShown.
+function whenShown(fn) {
+  if (document.prerendering) document.addEventListener("prerenderingchange", fn, { once: true });
+  else fn();
+}
+if (HTMLScriptElement.supports?.("speculationrules")) {
+  const rules = document.createElement("script");
+  rules.type = "speculationrules";
+  rules.textContent = JSON.stringify({
+    prerender: [{ urls: ["/", "/apps", "/settings"].filter((u) => u !== location.pathname), eagerness: "eager" }],
+  });
+  document.head.append(rules);
 }
 
 // An app's logo, or its initials when it has none.

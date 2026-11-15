@@ -38,7 +38,6 @@
     <main class="main">
       <section id="overview" aria-label="Notices" class="section">
         <div id="notice" role="alert"></div>
-        <div id="job"></div>
       </section>
 
       <section id="transfer" class="section">
@@ -73,6 +72,12 @@
     </main>
   </div>
 
+  <!-- The running job and its log: stays at the bottom of the window. -->
+  <aside id="dock" class="dock" aria-live="polite" hidden>
+    <div class="dock-progress" aria-hidden="true"></div>
+    <div id="dock-body"></div>
+    <pre id="dock-log" class="log dock-log" hidden></pre>
+  </aside>
   <script src="common.js"></script>
   <script src="settings.js"></script>
 </body>
