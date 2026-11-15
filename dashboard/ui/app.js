@@ -263,7 +263,8 @@ new IntersectionObserver((entries, obs) => {
 
 // The nav marks the section in view: the last one whose top has passed a
 // line near the top of the window. Sections side by side count as the first.
-const links = [...document.querySelectorAll(".nav a")];
+// Only links to sections of this page; Settings is a page of its own.
+const links = [...document.querySelectorAll('.nav a[href^="#"]')];
 let picked = null; // a section chosen in the nav wins while it is on screen
 function markNav() {
   let current = links[0];

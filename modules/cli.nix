@@ -1,5 +1,5 @@
 # The `agency` command (cli/agency.py): status, updates, apps, desktops,
-# secrets and the disk recovery key. Run `agency help` on the machine.
+# secrets, export and import, and the disk recovery key. Run `agency help` on the machine.
 {
   config,
   lib,
@@ -22,6 +22,9 @@ let
             lib.makeBinPath [
               pkgs.git
               pkgs.sops
+              pkgs.age
+              pkgs.gnutar
+              pkgs.zstd
               pkgs.ssh-to-age
               pkgs.qrencode
               pkgs.nodejs_24

@@ -1,0 +1,80 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Settings - agency</title>
+  <link rel="icon" href="data:,">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <svg width="0" height="0" aria-hidden="true" style="position:absolute">
+    <symbol id="pointer" viewBox="0 0 54 81">
+      <path class="pointer-tip" d="M0 0h9v9h-9z"/>
+      <path d="M0 9h18v9h-18zM0 18h27v9h-27zM0 27h36v9h-36zM0 36h45v9h-45zM0 45h54v9h-54zM0 54h36v9h-36zM0 63h9v9h-9zM27 63h18v9h-18zM36 72h18v9h-18z"/>
+    </symbol>
+  </svg>
+
+  <header class="bar">
+    <a class="brand" href="/">
+      <svg class="brand-mark" shape-rendering="crispEdges" aria-hidden="true"><use href="#pointer"/></svg>
+      <span class="brand-name" id="hostname">agency</span>
+      <span class="pill" id="pill"><span class="pill-mark"></span><span id="pill-text">Loading</span></span>
+    </a>
+    <span class="who" id="who"></span>
+  </header>
+
+  <div class="frame">
+    <nav class="nav" aria-label="Sections">
+      <a href="/#desktops">Desktops</a>
+      <a href="/#terminal">Terminal</a>
+      <a href="/#accounts">Accounts</a>
+      <a href="/#apps">Apps</a>
+      <a href="/#secrets">Secrets</a>
+      <a href="/#system">System</a>
+      <a href="/settings" class="is-current" aria-current="page">Settings</a>
+    </nav>
+
+    <main class="main">
+      <section id="overview" aria-label="Notices" class="section">
+        <div id="notice" role="alert"></div>
+        <div id="job"></div>
+      </section>
+
+      <section id="transfer" class="section">
+        <h2>Move to another machine</h2>
+        <p class="note">Copy this machine's setup to a new one: settings, apps, desktops, secrets and your changes to <code>/etc/nixos</code>. Each machine keeps its own name, disks, SSH host key and Tailscale login, so both can stay on your tailnet.</p>
+
+        <div class="pair">
+          <div class="box">
+            <h3>Export</h3>
+            <form id="export-form" class="form" autocomplete="off">
+              <label class="check"><input type="checkbox" name="home"> Include the home folder: sign-ins, repos and dotfiles. Caches and app installs are left out, but it can still be large.</label>
+              <label>Passphrase <input class="input" name="passphrase" type="password" required autocomplete="new-password"></label>
+              <label>The same again <input class="input" name="again" type="password" required autocomplete="new-password"></label>
+              <p class="note">The file is encrypted with this passphrase. You need it to import, and it cannot be recovered.</p>
+              <div class="buttons"><button type="submit" class="button button--primary" data-job>Export</button></div>
+            </form>
+            <div id="export-file"></div>
+          </div>
+
+          <div class="box">
+            <h3>Import</h3>
+            <form id="import-form" class="form" autocomplete="off">
+              <label>Export file <input class="input" name="file" type="file" accept=".agency"></label>
+              <div id="upload"></div>
+              <label>Passphrase <input class="input" name="passphrase" type="password" required autocomplete="off"></label>
+              <label class="check"><input type="checkbox" name="home" checked> Restore the home folder, if the export has one. Files with the same name are replaced.</label>
+              <p class="note">Settings and apps are replaced by the export's. Secrets are added, and the export's win where both have one. Then the system rebuilds.</p>
+              <div class="buttons"><button type="submit" class="button button--primary" data-job>Import</button></div>
+            </form>
+          </div>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <script src="common.js"></script>
+  <script src="settings.js"></script>
+</body>
+</html>

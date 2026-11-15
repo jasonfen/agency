@@ -43,6 +43,7 @@ Start any agent you picked. It already knows how the machine works.
 agency                             # what the machine is doing
 agency update                      # get the newest agency
 agency secret set OPENAI_API_KEY   # a key your agents can use
+agency export --home               # this machine's setup, to import on another
 ```
 
 Or use the dashboard: the laptop's screen shows its address as a QR code. It works over Tailscale only.

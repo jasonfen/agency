@@ -8,6 +8,9 @@ machine or are listed in `dashboardUsers` in settings.nix.
 /screen, its files and /api/screen need no login. They are what the laptop's
 own display shows (modules/screen.nix) and hold nothing secret.
 
+/settings moves a machine's setup to another one: `agency export` makes an
+encrypted file to download, and an uploaded one goes to `agency import`.
+
 /terminal is the web terminal (ttyd on 127.0.0.1:7381). It goes through this
 server too, so it has the same login check.
 
@@ -234,6 +237,35 @@ def apps():
 def secrets():
     ok, out, _ = sh("agency", "secret", "list", timeout=30)
     return [line.strip() for line in out.splitlines() if SECRET_NAME.match(line.strip())] if ok else []
+
+
+# ------------------------------------------------------------- transfer ---
+# Exports are made here, one at a time, and an uploaded export waits here
+# for its import. ~/.cache is left out of exports, so they never nest.
+
+TRANSFER = HOME / ".cache" / "agency"
+EXPORTS = TRANSFER / "export"
+UPLOAD = TRANSFER / "import" / "upload.agency"
+MIN_PASSPHRASE = 10
+
+
+def newest_export():
+    try:
+        files = [f for f in EXPORTS.glob("*.agency") if f.is_file()]
+    except OSError:
+        return None
+    return max(files, key=lambda f: f.stat().st_mtime, default=None)
+
+
+def transfer():
+    found = newest_export()
+    upload = UPLOAD.stat() if UPLOAD.is_file() else None
+    return {
+        "export": {"name": found.name, "size": found.stat().st_size, "made": found.stat().st_mtime} if found else None,
+        "upload": {"size": upload.st_size, "made": upload.st_mtime} if upload else None,
+        "free": shutil.disk_usage(HOME).free,
+        "minPassphrase": MIN_PASSPHRASE,
+    }
 
 
 def generation():
@@ -475,6 +507,8 @@ class Jobs:
             (STATE / "job.json").write_text(json.dumps({**job, "seen": True}))
         apps.clear()
         accounts.clear()
+        if st.get("kind") == "import" and st["state"] == "done":
+            UPLOAD.unlink(missing_ok=True)
         threading.Thread(target=updates.check, args=(False,), daemon=True).start()
 
 
@@ -759,6 +793,8 @@ FILES = {
     "/apps": "apps.html",
     "/app.js": "app.js",
     "/apps.js": "apps.js",
+    "/settings": "settings.html",
+    "/settings.js": "settings.js",
     "/common.js": "common.js",
     "/style.css": "style.css",
 }
@@ -880,6 +916,10 @@ class Handler(BaseHTTPRequestHandler):
             })
         if path == "/api/apps":
             return self.send_json(apps())
+        if path == "/api/transfer":
+            return self.send_json(transfer())
+        if path == "/api/export/download":
+            return self.send_download()
         if path == "/api/github":
             return self.send_json(github_login.snapshot())
         found = re.fullmatch(r"/api/login/([a-z0-9]+)", path)
@@ -903,6 +943,8 @@ class Handler(BaseHTTPRequestHandler):
             return
         if path.startswith("/terminal"):
             return self.proxy_terminal()
+        if path == "/api/import/upload":
+            return self.receive_upload()
         # A page on another site cannot send JSON here, or claim our origin.
         if not self.same_origin() or not (self.headers.get("Content-Type") or "").startswith("application/json"):
             return self.send_json({"error": "bad request"}, 400)
@@ -969,6 +1011,43 @@ class Handler(BaseHTTPRequestHandler):
             # The value goes to `agency secret set` on stdin, never in argv.
             return self.send_json(jobs.start("secrets", f"Saving {name}", ["agency", "secret", "set", name],
                                              stdin=value.rstrip("\n") + "\n"))
+        elif path == "/api/export":
+            passphrase = data.get("passphrase")
+            if not isinstance(passphrase, str) or len(passphrase) < MIN_PASSPHRASE:
+                return self.send_json({"ok": False, "error": f"Use a passphrase of at least {MIN_PASSPHRASE} characters."})
+            if "\n" in passphrase:
+                return self.send_json({"ok": False, "error": "The passphrase cannot have a line break."})
+            if jobs.running():
+                return self.send_json({"ok": False, "busy": True, "error": "Another change is still running. Wait for it to finish."})
+            EXPORTS.mkdir(parents=True, exist_ok=True)
+            os.chmod(EXPORTS, 0o700)
+            for old in EXPORTS.iterdir():
+                old.unlink(missing_ok=True)
+            out = EXPORTS / f"agency-{socket.gethostname().split('.')[0]}-{time.strftime('%Y%m%d-%H%M')}.agency"
+            home = bool(data.get("home"))
+            cmd = ["agency", "export", "-o", str(out)] + (["--home"] if home else [])
+            return self.send_json(jobs.start("export", "Exporting this machine" + (" and its home folder" if home else ""),
+                                             cmd, stdin=passphrase + "\n"))
+        elif path == "/api/export/delete":
+            if jobs.running() and (jobs.current() or {}).get("kind") == "export":
+                return self.send_json({"ok": False, "error": "The export is still being made."})
+            if EXPORTS.is_dir():
+                for old in EXPORTS.iterdir():
+                    old.unlink(missing_ok=True)
+            return self.send_json({"ok": True})
+        elif path == "/api/import":
+            passphrase = data.get("passphrase")
+            if not UPLOAD.is_file():
+                return self.send_json({"ok": False, "error": "Upload an export first."})
+            if not isinstance(passphrase, str) or not passphrase or "\n" in passphrase:
+                return self.send_json({"ok": False, "error": "Enter the passphrase the export was made with."})
+            cmd = ["agency", "import", str(UPLOAD)] + ([] if data.get("home", True) else ["--no-home"])
+            return self.send_json(jobs.start("import", "Importing a machine's setup", cmd, stdin=passphrase + "\n"))
+        elif path == "/api/import/discard":
+            if jobs.running() and (jobs.current() or {}).get("kind") == "import":
+                return self.send_json({"ok": False, "error": "The import is still running."})
+            UPLOAD.unlink(missing_ok=True)
+            return self.send_json({"ok": True})
         elif path == "/api/secrets/remove":
             name = str(data.get("name", ""))
             if not SECRET_NAME.match(name):
@@ -978,6 +1057,65 @@ class Handler(BaseHTTPRequestHandler):
             return self.send_json({"error": "not found"}, 404)
         kind, title, cmd = job
         return self.send_json(jobs.start(kind, title, cmd))
+
+    # --- exports, in and out
+
+    def send_download(self):
+        found = newest_export()
+        if not found or (jobs.running() and (jobs.current() or {}).get("kind") == "export"):
+            return self.send_json({"error": "There is no export to download."}, 404)
+        size = found.stat().st_size
+        self.send_response(200)
+        self.send_header("Content-Type", "application/octet-stream")
+        self.send_header("Content-Length", str(size))
+        self.send_header("Content-Disposition", f'attachment; filename="{found.name}"')
+        self.send_header("Cache-Control", "no-store")
+        self.send_header("X-Content-Type-Options", "nosniff")
+        self.end_headers()
+        if self.command == "HEAD":
+            return
+        with found.open("rb") as f:
+            while chunk := f.read(1 << 20):
+                self.wfile.write(chunk)
+
+    def receive_upload(self):
+        """An export, as the raw request body. Only this page can send it:
+        another site would need CORS for this content type, and no Origin
+        header from a browser means no upload."""
+        if not self.headers.get("Origin") or not self.same_origin() or \
+                self.headers.get("Content-Type") != "application/octet-stream":
+            return self.send_json({"error": "bad request"}, 400)
+        try:
+            length = int(self.headers.get("Content-Length") or 0)
+        except ValueError:
+            length = 0
+        if length <= 0:
+            return self.send_json({"ok": False, "error": "The file is empty."}, 400)
+        if length > shutil.disk_usage(HOME).free - (2 << 30):
+            self.close_connection = True
+            return self.send_json({"ok": False, "error": "There is not enough free disk space for that file."}, 413)
+        if jobs.running() and (jobs.current() or {}).get("kind") == "import":
+            self.close_connection = True
+            return self.send_json({"ok": False, "error": "An import is running."}, 409)
+        UPLOAD.parent.mkdir(parents=True, exist_ok=True)
+        os.chmod(UPLOAD.parent, 0o700)
+        part = UPLOAD.with_name(f"upload-{threading.get_ident()}.part")
+        left = length
+        try:
+            with open(part, "wb") as f:
+                while left:
+                    chunk = self.rfile.read(min(left, 1 << 20))
+                    if not chunk:
+                        raise OSError("the upload stopped")
+                    f.write(chunk)
+                    left -= len(chunk)
+            os.chmod(part, 0o600)
+            part.replace(UPLOAD)
+        except OSError:
+            part.unlink(missing_ok=True)
+            self.close_connection = True
+            return self.send_json({"ok": False, "error": "The upload stopped before it finished."}, 400)
+        return self.send_json({"ok": True, "size": length})
 
     # --- the web terminal
 

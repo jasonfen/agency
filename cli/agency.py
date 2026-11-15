@@ -15,6 +15,7 @@ import shutil
 import socket
 import subprocess
 import sys
+import tempfile
 import time
 from pathlib import Path
 
@@ -415,6 +416,34 @@ def catalog():
     return json.loads(result.stdout)
 
 
+def npm_apps(by_id, adds, removes):
+    """Install and remove the npm apps among adds and removes; return the
+    ids that failed to install."""
+    # Set the prefix here too: outside a login shell (the dashboard, a
+    # service) npm would otherwise try to write into its read-only store.
+    prefix = Path.home() / ".npm-global"
+    env = dict(os.environ, NPM_CONFIG_PREFIX=str(prefix))
+    env["PATH"] = f"{prefix / 'bin'}:{env.get('PATH', '')}"
+    failed = []
+    for app_id in removes:
+        app = by_id[app_id]
+        if app["kind"] == "npm":
+            say(f"Removing {app['label']} ...")
+            if app.get("teardown"):
+                run(["sh", "-c", app["teardown"]], env=env, check=False)
+            run(["npm", "uninstall", "-g", app["npm"]], env=env, check=False)
+    for app_id in adds:
+        app = by_id[app_id]
+        if app["kind"] == "npm":
+            say(f"Installing {app['label']} ...")
+            ok = run(["npm", "install", "-g", app["npm"]], env=env, check=False).returncode == 0
+            if ok and app.get("setup"):
+                ok = run(["sh", "-c", app["setup"]], env=env, check=False).returncode == 0
+            if not ok:
+                failed.append(app_id)
+    return failed
+
+
 def cmd_apps(args):
     apps = catalog()
     chosen = setting_list("apps")
@@ -470,28 +499,7 @@ def cmd_apps(args):
 
     # Then agent CLIs, installed with npm into this account. One that fails
     # to install is left off.
-    # Set the prefix here too: outside a login shell (the dashboard, a
-    # service) npm would otherwise try to write into its read-only store.
-    prefix = Path.home() / ".npm-global"
-    env = dict(os.environ, NPM_CONFIG_PREFIX=str(prefix))
-    env["PATH"] = f"{prefix / 'bin'}:{env.get('PATH', '')}"
-    failed = []
-    for app_id in removes:
-        app = by_id[app_id]
-        if app["kind"] == "npm":
-            say(f"Removing {app['label']} ...")
-            if app.get("teardown"):
-                run(["sh", "-c", app["teardown"]], env=env, check=False)
-            run(["npm", "uninstall", "-g", app["npm"]], env=env, check=False)
-    for app_id in adds:
-        app = by_id[app_id]
-        if app["kind"] == "npm":
-            say(f"Installing {app['label']} ...")
-            ok = run(["npm", "install", "-g", app["npm"]], env=env, check=False).returncode == 0
-            if ok and app.get("setup"):
-                ok = run(["sh", "-c", app["setup"]], env=env, check=False).returncode == 0
-            if not ok:
-                failed.append(app_id)
+    failed = npm_apps(by_id, adds, removes)
     if failed:
         chosen = [c for c in chosen if c not in failed]
         write_setting("apps", nix_list(chosen))
@@ -659,6 +667,278 @@ def cmd_secret(args):
         say(f"{args.name} is in /run/secrets/{args.name}, and in ${args.name} in new shells.")
 
 
+# ------------------------------------------------------ export / import ---
+# `agency export` puts this machine's setup in one file, encrypted with a
+# passphrase; `agency import` on another machine sets that one up the same
+# way. What makes a machine itself stays behind: its name, its disks and
+# hardware (hosts/), its SSH host key, its Tailscale node and its disk
+# encryption. The new machine keeps its own, so both can run side by side.
+#
+# The file is a zstd tar, encrypted with age (a passphrase, scrypt):
+#   agency/manifest.json   what is in it, and where it came from
+#   agency/settings.nix    this machine's settings.nix
+#   agency/changes.diff    local changes to /etc/nixos (not settings, secrets or hosts/)
+#   agency/secrets.json    the secrets, decrypted (the file itself is encrypted)
+#   home/...               the agent's home folder, if asked for
+
+EXPORT_FORMAT = 1
+# The settings.nix lines that belong to the machine, not to its setup. An
+# import keeps the new machine's own.
+OWN_SETTINGS = ("hostName", "user", "unattended", "disk", "vendorMatch")
+# Left out of changes.diff: settings and secrets travel on their own, and
+# hosts/ describes this machine's disks and hardware.
+REPO_LEFT_OUT = ("settings.nix", ".sops.yaml", "secrets", "hosts")
+# Left out of the home folder: caches, what apps reinstall, and what names
+# this machine (T3's environment id, Chromium's lock on this host name).
+HOME_LEFT_OUT = [
+    ".cache", ".npm", ".npm-global", ".nix-profile", ".local/state/nix",
+    ".local/share/Trash", ".t3", ".local/state/agency/t3-connected", ".dbus",
+    "nixos-git-unlinked-*", "nixos-git-broken-*", ".config/chromium/Singleton*",
+]
+HOME_LEFT_OUT_ANYWHERE = ["node_modules"]
+MIN_PASSPHRASE = 10
+
+
+def read_passphrase(confirm):
+    """From the keyboard, or the first line of stdin (the dashboard)."""
+    if sys.stdin.isatty():
+        value = getpass.getpass("Passphrase (not shown): ")
+        if confirm and getpass.getpass("The same again: ") != value:
+            die("the two passphrases differ")
+    else:
+        value = sys.stdin.readline().rstrip("\n")
+    if not value:
+        die("no passphrase")
+    return value
+
+
+def age(passphrase, *args, **kw):
+    """Start age with the passphrase on a pipe, never in argv or the environment."""
+    r, w = os.pipe()
+    os.write(w, passphrase.encode())
+    os.close(w)
+    env = dict(os.environ, AGE_PASSPHRASE_FD=str(r))
+    try:
+        return subprocess.Popen([tool("age"), "-j", "batchpass", *args], env=env, pass_fds=(r,), **kw)
+    finally:
+        os.close(r)
+
+
+def stage_dir():
+    """A private folder in RAM for the small, secret parts."""
+    base = os.environ.get("XDG_RUNTIME_DIR") or f"/run/user/{os.getuid()}"
+    return Path(tempfile.mkdtemp(prefix="agency-transfer-", dir=base if os.path.isdir(base) else None))
+
+
+def repo_changes():
+    """Committed local changes to /etc/nixos, as a diff from the upstream
+    commit they sit on, without the parts that do not travel."""
+    if not (REPO / ".git").is_dir():
+        return "", ""
+    base = output(["git", "-C", REPO, "merge-base", "HEAD", "@{u}"])
+    if not base:
+        return "", ""
+    left_out = [f":(exclude){p}" for p in REPO_LEFT_OUT]
+    diff = run(["git", "-C", REPO, "diff", "--binary", base, "HEAD", "--", ".", *left_out], capture=True).stdout
+    return diff, base
+
+
+def write_private(path, text):
+    fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+    with os.fdopen(fd, "w") as f:
+        f.write(text)
+
+
+def size_text(n):
+    for unit in ("bytes", "KB", "MB", "GB"):
+        if n < 1000 or unit == "GB":
+            return f"{n:.0f} {unit}" if unit == "bytes" else f"{n:.1f} {unit}"
+        n /= 1000
+
+
+def cmd_export(args):
+    passphrase = read_passphrase(confirm=True)
+    if len(passphrase) < MIN_PASSPHRASE:
+        die(f"use a passphrase of at least {MIN_PASSPHRASE} characters")
+    out = Path(args.output or f"agency-{host()}-{time.strftime('%Y%m%d')}.agency").expanduser().resolve()
+    if out.is_dir():
+        die(f"{out} is a folder; name a file")
+    partial = out.with_name(out.name + ".part")
+    home = Path.home()
+
+    if uncommitted():
+        say("Note: /etc/nixos has uncommitted changes. They are not in the export; commit them first to include them.")
+    stage = stage_dir()
+    try:
+        part = stage / "agency"
+        part.mkdir()
+        (part / "settings.nix").write_text(SETTINGS.read_text())
+        diff, base = repo_changes()
+        (part / "changes.diff").write_text(diff)
+        secrets = load_secrets()
+        write_private(part / "secrets.json", json.dumps(secrets))
+        (part / "manifest.json").write_text(json.dumps({
+            "format": EXPORT_FORMAT,
+            "from": host(),
+            "made": int(time.time()),
+            "user": USER,
+            "base": base,
+            "secrets": sorted(secrets),
+            "home": bool(args.home),
+        }, indent=2))
+
+        cmd = ["tar", "--zstd", "-cf", "-", "--transform", r"s,^\./,home/,;s,^\.$,home,"]
+        if args.home:
+            cmd += ["--ignore-failed-read", "--warning=no-failed-read", "--warning=no-file-changed",
+                    "--warning=no-file-removed", "--warning=no-file-ignored", "--anchored"]
+            for name in HOME_LEFT_OUT:
+                cmd.append(f"--exclude=./{name}")
+            for p in (out, partial):
+                if p.is_relative_to(home):
+                    cmd.append(f"--exclude=./{p.relative_to(home)}")
+            cmd.append("--no-anchored")
+            cmd += [f"--exclude={name}" for name in HOME_LEFT_OUT_ANYWHERE]
+        cmd += ["-C", stage, "agency"]
+        if args.home:
+            cmd += ["-C", home, "."]
+
+        say(f"Exporting this machine{' and its home folder' if args.home else ''} ...")
+        if args.home:
+            say("  The home folder can take a while. Left out: " + ", ".join(HOME_LEFT_OUT[:6]) + " and other caches.")
+        partial.unlink(missing_ok=True)
+        tar = subprocess.Popen(cmd, stdout=subprocess.PIPE)
+        enc = age(passphrase, "-e", "-o", partial, stdin=tar.stdout)
+        tar.stdout.close()
+        enc_code, tar_code = enc.wait(), tar.wait()
+        # tar's 1 means a file changed while it was read: the export is still good.
+        if enc_code != 0 or tar_code not in (0, 1):
+            partial.unlink(missing_ok=True)
+            die("the export failed (see above)")
+        os.chmod(partial, 0o600)
+        partial.rename(out)
+    finally:
+        shutil.rmtree(stage, ignore_errors=True)
+
+    say(f"Done: {out} ({size_text(out.stat().st_size)}).")
+    say(f"  In it: settings and apps, {len(secrets)} secret(s)"
+        + (", changes to /etc/nixos" if diff else "")
+        + (", the home folder" if args.home else "") + ".")
+    say("  Not in it: the name, disks and hardware, the SSH host key, the Tailscale login.")
+    say("  On the other machine: agency import <file>, or Settings in the dashboard.")
+
+
+def unpack(src, passphrase, dest, members, strip=0):
+    """Decrypt src and extract members into dest. Say why if it fails."""
+    dec = age(passphrase, "-d", src, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    cmd = ["tar", "--zstd", "-xpf", "-", "-C", dest]
+    if strip:
+        cmd.append(f"--strip-components={strip}")
+    tar = subprocess.Popen([*cmd, *members], stdin=dec.stdout, stderr=subprocess.PIPE, text=True)
+    dec.stdout.close()
+    tar_err = tar.communicate()[1]
+    dec_err = dec.stderr.read().decode(errors="replace")
+    dec_code = dec.wait()
+    if dec_code != 0:
+        if "incorrect passphrase" in dec_err:
+            die("that passphrase does not open this file")
+        if "header" in dec_err or "no identity matched" in dec_err or "batchpass" in dec_err:
+            die("this is not an agency export, or it is damaged")
+        die(f"could not decrypt it: {dec_err.strip().splitlines()[0] if dec_err.strip() else 'age failed'}")
+    if tar.returncode != 0:
+        sys.stderr.write(tar_err)
+        die("could not unpack it (see above)")
+
+
+def merged_settings(theirs, ours):
+    """Their settings.nix, with this machine's own lines kept."""
+    for key in OWN_SETTINGS:
+        mine = re.search(rf"^  {key} = .*;$", ours, re.M)
+        if mine:
+            theirs = re.sub(rf"^  {key} = .*;$", lambda _: mine.group(0), theirs, count=1, flags=re.M)
+    return theirs
+
+
+def cmd_import(args):
+    src = Path(args.file).expanduser().resolve()
+    if not src.is_file():
+        die(f"no file at {src}")
+    passphrase = read_passphrase(confirm=False)
+    ensure_repo()
+    if uncommitted():
+        commit("Local changes, saved before an import", ".")
+        say("Committed the local changes in /etc/nixos first.")
+
+    stage = stage_dir()
+    try:
+        say("Decrypting ...")
+        unpack(src, passphrase, stage, ["agency"])
+        part = stage / "agency"
+        try:
+            manifest = json.loads((part / "manifest.json").read_text())
+        except (OSError, ValueError):
+            die("this is not an agency export")
+        if manifest.get("format") != EXPORT_FORMAT:
+            die("this export was made by a different version of agency. Run `agency update` on both machines.")
+        say(f"An export of {manifest.get('from', '?')}, made {time.strftime('%Y-%m-%d %H:%M', time.localtime(manifest.get('made', 0)))}.")
+
+        before = output(["git", "-C", REPO, "rev-parse", "HEAD"])
+        apps_before = setting_list("apps")
+
+        def undo(why):
+            git("reset", "-q", "--hard", before, check=False)
+            die(f"nothing was changed: {why}")
+
+        # Settings: theirs, but this machine keeps its name, account and disks.
+        SETTINGS.write_text(merged_settings((part / "settings.nix").read_text(), SETTINGS.read_text()))
+
+        # Their local changes to /etc/nixos, onto ours.
+        diff = part / "changes.diff"
+        if diff.stat().st_size:
+            git("fetch", "-q", "origin", check=False)
+            if git("apply", "--3way", "--whitespace=nowarn", diff, check=False).returncode != 0:
+                undo("their changes to /etc/nixos do not fit onto this machine's (see above)")
+            say("Applied their changes to /etc/nixos.")
+
+        # Secrets: theirs are added to ours, and win where both have one.
+        theirs = json.loads((part / "secrets.json").read_text())
+        data = load_secrets()
+        if any(data.get(k) != v for k, v in theirs.items()):
+            data.update(theirs)
+            save_secrets(data)
+        if theirs:
+            say(f"Secrets: {', '.join(sorted(theirs))}.")
+
+        commit(f"Import the setup of {manifest.get('from', 'another machine')}", ".")
+        try:
+            rebuild()
+        except SystemExit:
+            undo("the rebuild failed (see above)")
+    finally:
+        shutil.rmtree(stage, ignore_errors=True)
+
+    # Agent CLIs come from npm, not the rebuild.
+    apps_now = setting_list("apps")
+    adds = [a for a in apps_now if a not in apps_before]
+    removes = [a for a in apps_before if a not in apps_now]
+    by_id = {app["id"]: app for app in catalog()}
+    failed = npm_apps(by_id, [a for a in adds if a in by_id], [r for r in removes if r in by_id])
+    if failed:
+        write_setting("apps", nix_list([a for a in apps_now if a not in failed]))
+        commit(f"Apps: could not install {', '.join(failed)}", "settings.nix")
+        say(f"Could not install {', '.join(failed)}; it is left off.")
+
+    if manifest.get("home") and not args.no_home:
+        if manifest.get("user") != USER:
+            say(f"Skipped the home folder: it is {manifest.get('user')}'s, and this machine's account is {USER}.")
+        else:
+            say("Restoring the home folder (files with the same name are replaced) ...")
+            unpack(src, passphrase, Path.home(), ["home"], strip=1)
+            say("Restored. Open a new shell to pick it up.")
+
+    say(f"Done. This machine is set up like {manifest.get('from', 'the other one')}, and keeps its own name ({host()}).")
+    say("  Sign-ins that are not in the home folder (and Tailscale) are this machine's own.")
+
+
 def cmd_setup_repo(args):
     ensure_repo()
 
@@ -703,6 +983,14 @@ def main():
     p.add_argument("name", nargs="?")
     p.add_argument("--no-rebuild", action="store_true", help="save without applying yet")
 
+    p = sub.add_parser("export", help="save this machine's setup to one encrypted file, for `agency import`")
+    p.add_argument("-o", "--output", metavar="FILE", help="where to write it (default: agency-<name>-<date>.agency here)")
+    p.add_argument("--home", action="store_true", help="also the home folder: sign-ins, repos, dotfiles")
+
+    p = sub.add_parser("import", help="set this machine up like the one in an export (keeps its own name)")
+    p.add_argument("file")
+    p.add_argument("--no-home", action="store_true", help="leave the home folder as it is, even if the export has one")
+
     sub.add_parser("recovery-key", help="show the disk recovery key once, then delete it")
     sub.add_parser("setup-repo", help=argparse.SUPPRESS)
     sub.add_parser("help", help="show this help")
@@ -724,12 +1012,14 @@ def main():
         "apps": cmd_apps,
         "desktop": cmd_desktop,
         "secret": cmd_secret,
+        "export": cmd_export,
+        "import": cmd_import,
         "recovery-key": cmd_recovery_key,
         "setup-repo": cmd_setup_repo,
     }
     handlers[args.command](args)
     if args.command is None:
-        say("\nCommands: update, rebuild, rollback, apps, desktop, secret, recovery-key. See: agency help")
+        say("\nCommands: update, rebuild, rollback, apps, desktop, secret, export, import, recovery-key. See: agency help")
 
 
 if __name__ == "__main__":
