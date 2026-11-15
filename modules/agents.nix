@@ -3,7 +3,7 @@
 # Agents run as a normal user with passwordless sudo, not as root itself:
 # they can do anything, but files they create are owned sensibly and agent
 # CLIs that refuse to run as root keep working.
-{ config, pkgs, settings, ... }:
+{ config, options, pkgs, settings, ... }:
 let
   # `agency-git-identity`: once GitHub is signed in, commit as that account,
   # with its private noreply address. A name or email already set in
@@ -39,6 +39,13 @@ in
   # Agents download prebuilt programs constantly. These two settings make
   # the usual kinds run on NixOS without per-program fixes:
   programs.nix-ld.enable = true; # generic Linux binaries
+  # Its usual libraries, and what a downloaded headless Chrome needs (T3
+  # Code's browser, Puppeteer and the like), which nix-ld lacks by default.
+  programs.nix-ld.libraries = options.programs.nix-ld.libraries.default ++ (with pkgs; [
+    glib nspr nss at-spi2-core dbus expat libxkbcommon libgbm alsa-lib cups
+    libx11 libxcomposite libxdamage libxext libxfixes libxrandr libxcb
+    pango cairo libdrm
+  ]);
   programs.appimage = {
     enable = true; # AppImages
     binfmt = true;
