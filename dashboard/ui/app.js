@@ -42,17 +42,18 @@ function drawUpdates(u) {
   let text;
   let button = "";
   const repo = esc(u.repo || "the agency repo");
-  if (!u.linked) {
+  // u.status is the server's: unlinked, behind, error, current or unchecked.
+  if (u.status === "unlinked") {
     text = "This machine is not linked to the agency repo yet. Update links it and gets the newest version.";
     button = `<button type="button" class="button button--primary" data-action="update" ${dis()}>Update</button>`;
-  } else if (u.behind > 0) {
+  } else if (u.status === "behind") {
     const list = u.subjects.map((s) => `<li>${esc(s)}</li>`).join("");
     text = `<strong>${u.behind} update${u.behind === 1 ? "" : "s"}</strong> from ${repo}.<ul>${list}</ul>`;
     button = `<button type="button" class="button button--primary" data-action="update" ${dis()}>Update</button>`;
-  } else if (u.error) {
+  } else if (u.status === "error") {
     text = esc(u.error);
     button = `<button type="button" class="button" data-action="check">Check again</button>`;
-  } else if (u.checked) {
+  } else if (u.status === "current") {
     text = `Up to date with ${repo}. <span class="muted">Checked ${ago(u.checked)}.</span>`;
     button = `<button type="button" class="button" data-action="check">Check again</button>`;
   } else {
@@ -91,7 +92,8 @@ function drawDesktops(list) {
 }
 
 // GitHub and T3 Code sign in with a short code shown here; the others in
-// the terminal.
+// the terminal. logins[id] mirrors the server's sign-in state (idle,
+// starting, waiting, done, failed), polled while starting or waiting.
 const CODE_LOGINS = { github: "/api/github", t3: "/api/login/t3" };
 const logins = { github: { state: "idle" }, t3: { state: "idle" } };
 const loginTimers = {};
@@ -116,8 +118,10 @@ function loginPanel(id) {
   const shown = l.url.replace(/^https:\/\//, "").replace(/\?.*$/, "");
   return `<div class="device">
     <div class="device-text">
-      <p>Open <a href="${esc(l.url)}" target="_blank" rel="noopener">${esc(shown)}</a> and enter:</p>
-      <p class="device-code mono">${esc(l.code)}</p>
+      ${l.code
+        ? `<p>Open <a href="${esc(l.url)}" target="_blank" rel="noopener">${esc(shown)}</a> and enter:</p>
+      <p class="device-code mono">${esc(l.code)}</p>`
+        : `<p>Open <a href="${esc(l.url)}" target="_blank" rel="noopener">${esc(shown)}</a> and finish signing in there.</p>`}
       <p class="row-detail">This updates by itself when you are done.</p>
     </div>
     <button type="button" class="button" data-login-cancel="${id}">Cancel</button>
@@ -376,3 +380,5 @@ $("#secret-form").addEventListener("submit", async (ev) => {
 refresh();
 loadApps();
 refreshShots();
+// A sign-in may already be under way, from before a reload or another tab.
+for (const id of Object.keys(CODE_LOGINS)) pollLogin(id).catch(() => {});

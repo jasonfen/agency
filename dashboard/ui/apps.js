@@ -178,7 +178,8 @@ async function flushQueue() {
   if (result.ok) {
     await refresh(); // the cards show the running job before leaving the queue
     forget();
-  } else if (!/still running/.test(result.error || "")) {
+  } else if (!result.busy) {
+    // busy: another change started first; the queue goes when it ends.
     showNotice(result.error || "That did not start.");
     forget();
   }

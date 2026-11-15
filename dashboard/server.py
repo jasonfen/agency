@@ -287,8 +287,20 @@ class Updates:
 
     def __init__(self):
         self.lock = threading.Lock()
-        self.state = {"linked": (REPO / ".git").is_dir(), "behind": 0, "subjects": [],
-                      "repo": "", "checked": None, "error": ""}
+        linked = (REPO / ".git").is_dir()
+        self.state = {"status": "unlinked" if not linked else "unchecked", "linked": linked,
+                      "behind": 0, "subjects": [], "repo": "", "checked": None, "error": ""}
+
+    @staticmethod
+    def status_of(state):
+        """unlinked, behind, error, current or unchecked, in that order."""
+        if not state["linked"]:
+            return "unlinked"
+        if state["behind"]:
+            return "behind"
+        if state["error"]:
+            return "error"
+        return "current" if state["checked"] else "unchecked"
 
     def check(self, fetch=True):
         linked = (REPO / ".git").is_dir()
@@ -303,6 +315,7 @@ class Updates:
             ok, out, _ = sh("git", "-C", str(REPO), "log", "--format=%s", "HEAD..@{u}", timeout=10)
             subjects = out.splitlines() if ok else []
             state.update(behind=len(subjects), subjects=subjects[:5])
+        state["status"] = self.status_of(state)
         with self.lock:
             self.state = state
         return state
@@ -321,6 +334,19 @@ updates = Updates()
 # A job is one `agency` command. It runs in its own transient user unit, so
 # it keeps going if this server restarts. Its log, exit status and a note of
 # what it is live in STATE, which survives the restart too.
+#
+# A job's state comes from those files, so a restarted server agrees with
+# the one that started it:
+#
+#   idle     no job.json                         start() -> running
+#   running  job.json, no .status, runner alive  wrapper exits -> done/failed
+#   done     .status is 0                        dismiss() -> idle, start() -> running
+#   failed   .status is not 0, or the runner     dismiss() -> idle, start() -> running
+#            died without writing one (code null)
+#
+# job.json names the runner ("systemd" and a unit, or "direct" and a pid),
+# so liveness is checked the way the job was really started. Leaving
+# running is handled once per job: job.json gets "seen" when it has been.
 
 # systemd-run --user and systemctl --user find the agent's user manager here.
 if not os.environ.get("XDG_RUNTIME_DIR") and Path(f"/run/user/{os.getuid()}").is_dir():
@@ -341,7 +367,6 @@ class Jobs:
         self.lock = threading.Lock()
         self.proc = None
         self.use_systemd = bool(shutil.which("systemd-run")) and not os.environ.get("AGENCY_JOBS_DIRECT")
-        self.finished_seen = None
 
     def current(self):
         try:
@@ -369,10 +394,18 @@ class Jobs:
         return {**job, "state": state, "code": code, "log": log}
 
     def alive(self, job):
-        if self.use_systemd:
+        if job.get("runner", "systemd") == "systemd":
             _, out, _ = sh("systemctl", "--user", "is-active", job["unit"], timeout=5)
             return out.strip() in ("active", "activating", "reloading")
-        return self.proc is not None and self.proc.poll() is None
+        if self.proc is not None and self.proc.pid == job.get("pid"):
+            return self.proc.poll() is None
+        # Started by an earlier server: the pid is ours only if it is still
+        # the wrapper for this job (its argv names the job's status file).
+        try:
+            argv = Path(f"/proc/{job.get('pid')}/cmdline").read_bytes().split(b"\0")
+        except OSError:
+            return False
+        return str(STATE / f"{job['id']}.status").encode() in argv
 
     def running(self):
         st = self.status()
@@ -381,7 +414,7 @@ class Jobs:
     def start(self, kind, title, cmd, stdin=None, extra=None):
         with self.lock:
             if self.running():
-                return {"ok": False, "error": "Another change is still running. Wait for it to finish."}
+                return {"ok": False, "busy": True, "error": "Another change is still running. Wait for it to finish."}
             STATE.mkdir(parents=True, exist_ok=True)
             os.chmod(STATE, 0o700)
             job_id = time.strftime("%Y%m%d-%H%M%S-") + f"{int(time.time() * 1000) % 1000:03d}"
@@ -396,6 +429,7 @@ class Jobs:
                     with os.fdopen(fd, "w") as f:
                         f.write(stdin)
                 log.write_text("")
+                runner = {"runner": "systemd", "unit": unit}
                 if self.use_systemd:
                     path = os.pathsep.join(["/run/wrappers/bin", os.environ.get("PATH", "")])
                     ok, _, err = sh("systemd-run", "--user", "--quiet", "--collect", f"--unit={unit}",
@@ -412,6 +446,7 @@ class Jobs:
                     with open(log, "ab") as out:
                         self.proc = subprocess.Popen(argv, stdout=out, stderr=subprocess.STDOUT,
                                                      stdin=subprocess.DEVNULL, start_new_session=True)
+                    runner = {"runner": "direct", "pid": self.proc.pid}
             except OSError as e:
                 if infile:
                     Path(infile).unlink(missing_ok=True)
@@ -420,8 +455,8 @@ class Jobs:
                 if old.name.split(".")[0] not in (job_id, "job"):
                     old.unlink(missing_ok=True)
             (STATE / "job.json").write_text(json.dumps(
-                {"id": job_id, "kind": kind, "title": title, "unit": unit, "started": time.time(),
-                 **(extra or {})}))
+                {"id": job_id, "kind": kind, "title": title, "started": time.time(),
+                 **runner, **(extra or {})}))
             return {"ok": True}
 
     def dismiss(self):
@@ -431,11 +466,16 @@ class Jobs:
 
     def after_finish(self, st):
         """Refresh what a finished job may have changed, once per job."""
-        if st and st["state"] != "running" and self.finished_seen != st["id"]:
-            self.finished_seen = st["id"]
-            apps.clear()
-            accounts.clear()
-            threading.Thread(target=updates.check, args=(False,), daemon=True).start()
+        if not st or st["state"] == "running" or st.get("seen"):
+            return
+        with self.lock:
+            job = self.current()
+            if not job or job["id"] != st["id"] or job.get("seen"):
+                return
+            (STATE / "job.json").write_text(json.dumps({**job, "seen": True}))
+        apps.clear()
+        accounts.clear()
+        threading.Thread(target=updates.check, args=(False,), daemon=True).start()
 
 
 jobs = Jobs()
@@ -485,9 +525,9 @@ def screen():
     _, made = generation()
     up = updates.state
     updated = f"updated {when(made)}" if made else ""
-    if up["checked"] and up["linked"] and not up["error"] and up["behind"] == 0:
+    if up["status"] == "current":
         text = "Up to date" + (f", {updated}" if updated else "")
-    elif up["behind"]:
+    elif up["status"] == "behind":
         text = f"{up['behind']} update{'s' if up['behind'] != 1 else ''} ready" + (f", {updated}" if updated else "")
     else:
         text = updated.capitalize() or "Unknown"
@@ -522,34 +562,66 @@ def github_post(url, fields):
         return json.loads(r.read())
 
 
-class GitHubLogin:
+class CodeLogin:
+    """A sign-in that shows a URL (and usually a short code) on the page.
+
+        idle --start--> starting --URL seen--> waiting --signed in--> done
+                           |                      |
+                           +------- error --------+---------------> failed
+        any --cancel--> idle;  done/failed --start--> starting
+
+    start() does nothing while starting or waiting. Each start or cancel
+    begins a new run; a run that is no longer current changes nothing, so
+    a cancelled sign-in cannot come back.
+    """
+
+    BUSY = ("starting", "waiting")
+
     def __init__(self):
         self.lock = threading.Lock()
-        self.state = {"state": "idle", "code": "", "url": "", "error": ""}
         self.run_id = 0
+        self.state = self.blank("idle")
+
+    @staticmethod
+    def blank(state):
+        return {"state": state, "code": "", "url": "", "error": ""}
+
+    def snapshot(self):
+        with self.lock:
+            return dict(self.state)
 
     def start(self):
         with self.lock:
-            if self.state["state"] == "waiting":
-                return self.state
+            if self.state["state"] in self.BUSY:
+                return dict(self.state)
             self.run_id += 1
-            self.state = {"state": "starting", "code": "", "url": "", "error": ""}
+            self.state = self.blank("starting")
             run_id = self.run_id
         threading.Thread(target=self._run, args=(run_id,), daemon=True).start()
-        return self.state
+        return self.snapshot()
 
     def cancel(self):
         with self.lock:
             self.run_id += 1
-            self.state = {"state": "idle", "code": "", "url": "", "error": ""}
-        return self.state
+            self.state = self.blank("idle")
+            self._stop()
+        return self.snapshot()
+
+    def _stop(self):
+        """Stop the current run's work. Called with the lock held."""
 
     def _set(self, run_id, **kw):
+        """Update the state if run_id is still current; say whether it is."""
         with self.lock:
             if run_id == self.run_id:
                 self.state.update(kw)
             return run_id == self.run_id
 
+    def _run(self, run_id):
+        raise NotImplementedError
+
+
+class GitHubLogin(CodeLogin):
     def _run(self, run_id):
         try:
             dev = github_post("https://github.com/login/device/code",
@@ -557,7 +629,8 @@ class GitHubLogin:
         except Exception:
             self._set(run_id, state="failed", error="Could not reach GitHub.")
             return
-        self._set(run_id, state="waiting", code=dev["user_code"], url=dev["verification_uri"])
+        if not self._set(run_id, state="waiting", code=dev["user_code"], url=dev["verification_uri"]):
+            return  # cancelled
         interval = int(dev.get("interval", 5))
         deadline = time.time() + int(dev.get("expires_in", 900))
         while time.time() < deadline:
@@ -577,28 +650,27 @@ class GitHubLogin:
                 interval += 5
                 continue
             if err:
-                self._set(run_id, state="failed",
+                self._set(run_id, state="failed", code="", url="",
                           error="The code ran out. Try again." if err == "expired_token" else "GitHub said no.")
                 return
+            if not self._set(run_id):
+                return  # cancelled while GitHub answered
             ok, _, _ = sh("gh", "auth", "login", "--hostname", "github.com", "--git-protocol", "https",
                           "--with-token", stdin=res["access_token"] + "\n")
             if ok:
                 sh("gh", "auth", "setup-git")
                 sh("agency-git-identity")
             accounts.clear()
-            self._set(run_id, state="done" if ok else "failed", code="",
+            self._set(run_id, state="done" if ok else "failed", code="", url="",
                       error="" if ok else "gh could not save the sign-in.")
             return
-        self._set(run_id, state="failed", error="The code ran out. Try again.")
+        self._set(run_id, state="failed", code="", url="", error="The code ran out. Try again.")
 
 
-github_login = GitHubLogin()
+class CliCodeLogin(CodeLogin):
+    """A CLI that signs in with a URL and maybe a short code, without a terminal.
 
-
-class CliCodeLogin:
-    """A CLI that signs in with a URL and a short code, without a terminal.
-
-    The program runs with no stdin; the page shows the URL and code it
+    The program runs with no stdin; the page shows the URL (and code) it
     prints, and the sign-in is done when the program exits 0.
     """
 
@@ -606,33 +678,20 @@ class CliCodeLogin:
     CODE = re.compile(r"\b([A-Z0-9]{4}-[A-Z0-9]{4,5})\b")
 
     def __init__(self, cmd, done_file):
+        super().__init__()
         self.cmd = cmd
         self.done_file = done_file
-        self.lock = threading.Lock()
         self.proc = None
-        self.state = {"state": "idle", "code": "", "url": "", "error": ""}
 
-    def start(self):
-        with self.lock:
-            if self.state["state"] in ("starting", "waiting"):
-                return self.state
-            self.state = {"state": "starting", "code": "", "url": "", "error": ""}
-        threading.Thread(target=self._run, daemon=True).start()
-        return self.state
-
-    def cancel(self):
-        with self.lock:
-            proc, self.proc = self.proc, None
-            self.state = {"state": "idle", "code": "", "url": "", "error": ""}
+    def _stop(self):
+        proc, self.proc = self.proc, None
         if proc:
             proc.terminate()
-        return self.state
 
-    def _run(self):
+    def _run(self, run_id):
         prog = which(self.cmd[0])
         if not prog:
-            with self.lock:
-                self.state.update(state="failed", error="It is not installed.")
+            self._set(run_id, state="failed", error="It is not installed.")
             return
         env = dict(os.environ)
         env["PATH"] = os.pathsep.join([str(HOME / ".npm-global/bin"), env.get("PATH", "")])
@@ -640,38 +699,47 @@ class CliCodeLogin:
             proc = subprocess.Popen([prog, *self.cmd[1:]], stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
                                     stderr=subprocess.STDOUT, text=True, errors="replace", env=env, cwd=HOME)
         except OSError as e:
-            with self.lock:
-                self.state.update(state="failed", error=str(e))
+            self._set(run_id, state="failed", error=str(e))
             return
         with self.lock:
-            self.proc = proc
+            current = run_id == self.run_id
+            if current:
+                self.proc = proc
+        if not current:
+            proc.terminate()  # cancelled while it started
+            proc.wait()
+            return
         tail = []
         for raw in proc.stdout:
             line = re.sub(r"\x1b\[[0-9;?]*[A-Za-z]", "", raw).strip()
             tail = (tail + [line])[-3:]
             with self.lock:
-                if self.proc is not proc:
+                if run_id != self.run_id:
                     break
                 url, code = self.URL.search(line), self.CODE.search(line)
                 if url and not self.state["url"]:
                     self.state.update(url=url.group(0))
                 if code and not self.state["code"]:
                     self.state.update(code=code.group(1))
-                if self.state["url"] and self.state["code"]:
+                # The URL is enough to act on; a code may follow it.
+                if self.state["url"]:
                     self.state["state"] = "waiting"
         ok = proc.wait() == 0
         with self.lock:
-            if self.proc is not proc:
+            if run_id != self.run_id:
                 return  # cancelled
             self.proc = None
             if ok:
                 self.done_file.parent.mkdir(parents=True, exist_ok=True)
                 self.done_file.touch()
-                self.state = {"state": "done", "code": "", "url": "", "error": ""}
+                self.state = self.blank("done")
             else:
-                self.state.update(state="failed", code="", error=tail[-1] if tail else "The sign-in stopped.")
+                self.state.update(state="failed", code="", url="",
+                                  error=tail[-1] if tail else "The sign-in stopped.")
         accounts.clear()
 
+
+github_login = GitHubLogin()
 
 # T3 Connect, plus T3's background service, so `t3 serve` keeps running.
 code_logins = {
@@ -813,10 +881,10 @@ class Handler(BaseHTTPRequestHandler):
         if path == "/api/apps":
             return self.send_json(apps())
         if path == "/api/github":
-            return self.send_json(github_login.state)
+            return self.send_json(github_login.snapshot())
         found = re.fullmatch(r"/api/login/([a-z0-9]+)", path)
         if found and found.group(1) in code_logins:
-            return self.send_json(code_logins[found.group(1)].state)
+            return self.send_json(code_logins[found.group(1)].snapshot())
         if path == "/api/job":
             job = jobs.status()
             jobs.after_finish(job)
