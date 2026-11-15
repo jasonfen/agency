@@ -222,7 +222,7 @@ function drawApps() {
 
 function drawSecrets(names) {
   const chips = names.map((n) => `<span class="chip"><span>${esc(n)}</span><button type="button" data-secret-remove="${esc(n)}" aria-label="Remove ${esc(n)}" title="Remove" ${dis()}>×</button></span>`).join("");
-  const add = $("#secret-form").hidden ? `<button type="button" class="button" data-action="secret-add">Add a secret</button>` : "";
+  const add = $("#secret-form").hidden ? `<button type="button" class="button chips-end" data-action="secret-add">Add a secret</button>` : "";
   setHTML($("#secret-list"), (chips || `<span class="muted">No secrets yet.</span>`) + add);
 }
 

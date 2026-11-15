@@ -212,6 +212,7 @@ h2 { font: 700 2rem / 1.1 var(--font-display); }
 
 .box { padding: 1rem; }
 .chips { display: flex; flex-wrap: wrap; gap: 0.625rem; align-items: center; }
+.chips-end { margin-left: auto; }
 .chip {
   display: inline-flex;
   align-items: center;
