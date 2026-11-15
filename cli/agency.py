@@ -311,8 +311,15 @@ def cmd_status(args):
         notes.append("First-start setup is still running: journalctl -fu agency-firstboot")
     if run(["sudo", "-n", "test", "-e", RECOVERY_KEY], check=False, capture=True).returncode == 0:
         notes.append("The disk recovery key is still on disk. A person should run: agency recovery-key")
+    try:
+        last = AUTO_UPDATE_LOG.read_text().strip()
+    except OSError:
+        last = "not run yet"
+    say(f"  updates    weekly nixpkgs update; last: {last}")
     if uncommitted():
         notes.append("/etc/nixos has changes that are not committed.")
+    if output(["systemctl", "is-failed", "agency-auto-update.service"]) == "failed":
+        notes.append("The last automatic update failed: journalctl -u agency-auto-update")
     for note in notes:
         say(f"  ! {note}")
 
@@ -354,6 +361,39 @@ def cmd_rebuild(args):
     rebuild("test" if args.test else "switch")
     if args.test:
         say("Applied until the next reboot. Run `agency rebuild` to keep it.")
+
+
+AUTO_UPDATE_LOG = Path("/var/lib/agency-auto-update/last")
+
+
+def cmd_auto_update(args):
+    """What the weekly timer runs (modules/autoupdate.nix): newer nixpkgs
+    only, never the agency repo, and only from a clean, committed /etc/nixos
+    so half-done work is never applied unattended."""
+    def record(line):
+        say(line)
+        try:
+            AUTO_UPDATE_LOG.write_text(f"{time.strftime('%Y-%m-%d %H:%M')}  {line}\n")
+        except OSError:
+            pass
+
+    ensure_repo()
+    if uncommitted():
+        record("skipped: /etc/nixos has uncommitted changes")
+        return
+    say("Updating nixpkgs ...")
+    run(["nix", "flake", "update", "nixpkgs", "--flake", f"path:{REPO}"])
+    if git("diff", "--quiet", "--", "flake.lock", check=False).returncode == 0:
+        record("nixpkgs already up to date")
+        return
+    try:
+        rebuild()
+    except SystemExit:
+        git("checkout", "--", "flake.lock", check=False)
+        record("FAILED: the rebuild with newer nixpkgs failed; see journalctl -u agency-auto-update")
+        raise
+    commit("Update nixpkgs (weekly auto-update)", "flake.lock")
+    record("updated nixpkgs and switched to it")
 
 
 def cmd_rollback(args):
@@ -596,6 +636,7 @@ def main():
     p.add_argument("--test", action="store_true", help="only until the next reboot (a safe trial)")
 
     sub.add_parser("rollback", help="go back to the previous system")
+    sub.add_parser("auto-update", help="update nixpkgs and rebuild (what the weekly timer runs)")
 
     p = sub.add_parser("apps", help="list, add or remove optional software")
     p.add_argument("action", nargs="?", default="list", choices=["list", "add", "remove"])
@@ -627,6 +668,7 @@ def main():
         None: cmd_status,
         "status": cmd_status,
         "update": cmd_update,
+        "auto-update": cmd_auto_update,
         "rebuild": cmd_rebuild,
         "rollback": cmd_rollback,
         "apps": cmd_apps,

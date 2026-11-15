@@ -12,6 +12,7 @@
     ../../modules/laptop.nix # run lid-closed, never sleep
     ../../modules/battery.nix # cap the battery charge
     ../../modules/cli.nix # the `agency` command
+    ../../modules/autoupdate.nix # weekly nixpkgs updates
     ../../modules/secrets.nix # encrypted secrets for agents
     ../../modules/skills.nix # what agent CLIs are told about this machine
     ../../modules/dashboard.nix # the web dashboard and terminal, over Tailscale
