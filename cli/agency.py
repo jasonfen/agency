@@ -455,36 +455,55 @@ def cmd_apps(args):
         return
 
     ensure_repo()
+    before = SETTINGS.read_text()
     chosen = [c for c in chosen if c not in removes] + adds
     write_setting("apps", nix_list(chosen))
-    parts = ([f"add {', '.join(adds)}"] if adds else []) + ([f"remove {', '.join(removes)}"] if removes else [])
-    commit(f"Apps: {'; '.join(parts)}", "settings.nix")
 
-    # Agent CLIs (npm) install into this account; the rest need a rebuild,
-    # one for the whole batch.
+    # System apps first, in one rebuild. If it fails, settings.nix goes back
+    # to how it was, so no app is recorded as on that is not installed.
+    if any(by_id[a]["kind"] != "npm" for a in adds + removes):
+        try:
+            rebuild()
+        except SystemExit:
+            SETTINGS.write_text(before)
+            die("nothing was changed: the rebuild failed (see above).")
+
+    # Then agent CLIs, installed with npm into this account. One that fails
+    # to install is left off.
     # Set the prefix here too: outside a login shell (the dashboard, a
     # service) npm would otherwise try to write into its read-only store.
     prefix = Path.home() / ".npm-global"
     env = dict(os.environ, NPM_CONFIG_PREFIX=str(prefix))
     env["PATH"] = f"{prefix / 'bin'}:{env.get('PATH', '')}"
+    failed = []
     for app_id in removes:
         app = by_id[app_id]
         if app["kind"] == "npm":
             say(f"Removing {app['label']} ...")
             if app.get("teardown"):
                 run(["sh", "-c", app["teardown"]], env=env, check=False)
-            run(["npm", "uninstall", "-g", app["npm"]], env=env)
+            run(["npm", "uninstall", "-g", app["npm"]], env=env, check=False)
     for app_id in adds:
         app = by_id[app_id]
         if app["kind"] == "npm":
             say(f"Installing {app['label']} ...")
-            run(["npm", "install", "-g", app["npm"]], env=env)
-            if app.get("setup"):
-                run(["sh", "-c", app["setup"]], env=env)
-    if any(by_id[a]["kind"] != "npm" for a in adds + removes):
-        rebuild()
-    labels = [by_id[a]["label"] for a in adds + removes]
-    say(f"Done: {', '.join(labels)}.")
+            ok = run(["npm", "install", "-g", app["npm"]], env=env, check=False).returncode == 0
+            if ok and app.get("setup"):
+                ok = run(["sh", "-c", app["setup"]], env=env, check=False).returncode == 0
+            if not ok:
+                failed.append(app_id)
+    if failed:
+        chosen = [c for c in chosen if c not in failed]
+        write_setting("apps", nix_list(chosen))
+
+    done = [a for a in adds if a not in failed]
+    parts = ([f"add {', '.join(done)}"] if done else []) + ([f"remove {', '.join(removes)}"] if removes else [])
+    if parts:
+        commit(f"Apps: {'; '.join(parts)}", "settings.nix")
+    if failed:
+        die(f"could not install {', '.join(by_id[a]['label'] for a in failed)} (see above); "
+            "it is left off.")
+    say(f"Done: {', '.join(by_id[a]['label'] for a in adds + removes)}.")
 
 
 def cmd_desktop(args):
