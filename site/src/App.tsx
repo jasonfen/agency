@@ -1,18 +1,7 @@
-import {
-  BatteryCharging,
-  Bot,
-  Download,
-  KeyRound,
-  LayoutDashboard,
-  LockKeyhole,
-  MonitorPlay,
-  RefreshCw,
-  Undo2,
-  type LucideIcon,
-} from 'lucide-react'
+import { Download } from 'lucide-react'
 import { useEffect, useState, type ReactNode } from 'react'
 import { CopyButton } from '@/components/copy-button'
-import { Dither, PixelCheck, PixelCross, PixelCursor, PixelStar } from '@/components/pixel'
+import { Dither, PixelCheck, PixelCursor, PixelStar } from '@/components/pixel'
 import { buttonVariants } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
 import { githubUrl, useRelease } from '@/release'
@@ -33,76 +22,24 @@ const requirements = [
 
 /** What you would do by hand, and what agency does instead. */
 const diy = [
-  ['Install Linux, encrypt the disk, wire up TPM unlock', 'One USB stick and five questions'],
-  ['Set up SSH, Tailscale and your keys', 'Your GitHub keys and Tailscale work at first boot'],
-  ['Install each agent CLI and sign it in', 'Pick them during setup, signed in before first boot'],
-  ['Write a prompt explaining the machine', 'Every agent already knows how the machine works'],
-  ['Glue together Xvfb, a window manager and VNC', 'Desktops to drive, and to watch from a browser tab'],
-  ["Hope the next config change doesn't break it", 'Every change is a commit, and one command undoes it'],
+  ['Install Linux and encrypt the disk', 'One USB stick'],
+  ['Set up SSH and Tailscale', 'Ready at first boot'],
+  ['Install and sign in each agent', 'Picked during setup'],
+  ['Explain the machine to every agent', 'They already know it'],
+  ['Wire up Xvfb and VNC', 'Desktops in a browser tab'],
+  ['Hope a change doesn\'t break it', <code className="font-mono text-[0.9em]">agency rollback</code>],
 ]
 
-const features: { icon: LucideIcon; title: string; body: ReactNode }[] = [
-  {
-    icon: Bot,
-    title: 'Agents know the machine',
-    body: 'Claude Code, Codex and OpenCode start with skills for the desktop, secrets and changing the system. No briefing needed.',
-  },
-  {
-    icon: Undo2,
-    title: 'Root, with an undo',
-    body: (
-      <>
-        Passwordless sudo on NixOS. The whole system is one git repo, so a bad change is one{' '}
-        <code className="font-mono text-[0.9em] text-foreground">agency rollback</code> away.
-      </>
-    ),
-  },
-  {
-    icon: MonitorPlay,
-    title: 'Desktops you can watch',
-    body: 'GUI apps run on virtual desktops. Watch from any browser, or take over for a login, 2FA or a CAPTCHA.',
-  },
-  {
-    icon: KeyRound,
-    title: 'Secrets, kept encrypted',
-    body: (
-      <>
-        <code className="font-mono text-[0.9em] text-foreground">agency secret set</code> encrypts a key to the machine. Agents read it as an environment
-        variable, and it never lands in a commit.
-      </>
-    ),
-  },
-  {
-    icon: RefreshCw,
-    title: 'Updates itself',
-    body: 'Packages update every week, unattended. A failed build changes nothing, and it never reboots on its own.',
-  },
-  {
-    icon: BatteryCharging,
-    title: 'Built for the shelf',
-    body: 'Close the lid and it keeps running. It never sleeps, and charging stops at 80% so the battery lasts as a UPS.',
-  },
-  {
-    icon: LockKeyhole,
-    title: 'Encrypted, unlocked by TPM',
-    body: 'The disk is encrypted and unlocks itself at boot, so it comes back after a power cut with nobody there.',
-  },
-  {
-    icon: LayoutDashboard,
-    title: 'A dashboard on your tailnet',
-    body: 'Status, desktops, a terminal, apps and secrets on one page, over Tailscale only. Its screen shows a QR code to open it.',
-  },
+const features: [string, ReactNode][] = [
+  ['Agents know the machine', 'Skills for Claude Code, Codex and OpenCode.'],
+  ['Root, with an undo', 'Every change is a commit.'],
+  ['Desktops you can watch', 'Or take over, from a browser.'],
+  ['Encrypted secrets', 'Agents read them as env vars.'],
+  ['Updates itself', 'Weekly, unattended.'],
+  ['Built for the shelf', 'Lid shut, never sleeps, charges to 80%.'],
+  ['TPM disk unlock', 'Back up on its own after a power cut.'],
+  ['A dashboard', 'On your tailnet only.'],
 ]
-
-/** A small mono label above a section heading. */
-function Kicker({ children }: { children: ReactNode }) {
-  return (
-    <p className="mb-4 flex items-center gap-2.5 font-mono text-sm font-medium tracking-widest text-primary uppercase">
-      <span className="size-2 bg-primary" aria-hidden />
-      {children}
-    </p>
-  )
-}
 
 function Github({ className }: { className?: string }) {
   return (
@@ -330,77 +267,39 @@ export default function App() {
               </div>
             </div>
           </section>
-          <section id="why" className="relative mx-auto max-w-6xl px-5 pb-24 sm:px-8 lg:pb-32">
-            <div className="grid items-start gap-10 lg:grid-cols-12 lg:gap-12">
-              <div className="lg:sticky lg:top-10 lg:col-span-4">
-                <Kicker>Why agency</Kicker>
-                <h2 className="font-heading text-4xl leading-[1.02] font-bold sm:text-5xl">Why not do it yourself?</h2>
-                <p className="mt-5 text-lg leading-relaxed text-muted-foreground">
-                  You could. It's a weekend of setup, then it's yours to keep working. agency does all of it in one
-                  install, and keeps doing it.
-                </p>
-              </div>
-
-              <div className="pixel-shadow-lg border-2 border-ink bg-card text-card-foreground lg:col-span-8 dark:border-edge">
-                <div className="grid grid-cols-2 border-b-2 border-ink dark:border-edge">
-                  <div className="px-4 py-4 sm:px-6">
-                    <p className="font-heading text-lg font-bold sm:text-xl">Doing it yourself</p>
-                    <p className="mt-0.5 font-mono text-xs text-muted-foreground sm:text-sm">a weekend, then upkeep</p>
-                  </div>
-                  <div className="border-l-2 border-ink bg-primary px-4 py-4 text-primary-foreground sm:px-6 dark:border-edge">
-                    <p className="font-heading text-lg font-bold sm:text-xl">With agency</p>
-                    <p className="mt-0.5 font-mono text-xs opacity-85 sm:text-sm">5 minutes, then nothing</p>
-                  </div>
-                </div>
-                <ul>
-                  {diy.map(([yourself, agency]) => (
-                    <li
-                      key={yourself}
-                      className="grid grid-cols-2 border-b-2 border-dashed border-foreground/15 last:border-b-0"
-                    >
-                      <p className="flex gap-2.5 px-4 py-4 text-sm text-muted-foreground sm:gap-3 sm:px-6 sm:text-base">
-                        <PixelCross className="mt-1.5 h-3 shrink-0 text-destructive/70" />
-                        {yourself}
-                      </p>
-                      <p className="flex gap-2.5 border-l-2 border-ink bg-accent/50 px-4 py-4 text-sm font-medium sm:gap-3 sm:px-6 sm:text-base dark:border-edge">
-                        <PixelCheck className="mt-1.5 h-3.5 shrink-0 text-primary" />
+          <section id="why" className="mx-auto max-w-6xl px-5 pb-24 sm:px-8 lg:pb-32">
+            <h2 className="font-heading text-4xl leading-[1.02] font-bold sm:text-5xl">Why not do it yourself?</h2>
+            <table className="mt-8 w-full border-2 border-ink bg-card text-left text-card-foreground dark:border-edge">
+              <thead className="font-heading text-xl">
+                <tr className="border-b-2 border-ink dark:border-edge">
+                  <th className="w-1/2 px-5 py-3 font-bold text-muted-foreground">Yourself</th>
+                  <th className="border-l-2 border-ink px-5 py-3 font-bold dark:border-edge">agency</th>
+                </tr>
+              </thead>
+              <tbody>
+                {diy.map(([yourself, agency], i) => (
+                  <tr key={i} className="border-b border-dashed border-foreground/15 last:border-b-0">
+                    <td className="px-5 py-3 text-muted-foreground">{yourself}</td>
+                    <td className="border-l-2 border-ink px-5 py-3 font-medium dark:border-edge">
+                      <span className="flex items-center gap-3">
+                        <PixelCheck className="h-3.5 shrink-0 text-primary" />
                         {agency}
-                      </p>
-                    </li>
-                  ))}
-                </ul>
-              </div>
-            </div>
-
-            <div className="mt-28 lg:mt-36">
-              <div className="grid gap-6 lg:grid-cols-12 lg:items-end lg:gap-12">
-                <div className="lg:col-span-7">
-                  <Kicker>Features</Kicker>
-                  <h2 className="font-heading text-4xl leading-[1.02] font-bold sm:text-5xl">
-                    Everything an agent needs, already set up.
-                  </h2>
-                </div>
-                <p className="text-lg leading-relaxed text-muted-foreground lg:col-span-5">
-                  Nothing to configure after the install. Your agents get a whole computer, and you get to watch,
-                  steer and undo.
-                </p>
-              </div>
-
-              <ul className="mt-12 grid gap-5 sm:grid-cols-2 lg:grid-cols-4">
-                {features.map(({ icon: Icon, title, body }) => (
-                  <li
-                    key={title}
-                    className="group pixel-shadow flex flex-col border-2 border-ink bg-card p-6 text-card-foreground transition-[translate,box-shadow] duration-150 hover:-translate-x-0.5 hover:-translate-y-0.5 hover:shadow-[6px_6px_0_var(--ink)] dark:border-edge"
-                  >
-                    <span className="flex size-11 items-center justify-center border-2 border-ink bg-accent text-primary transition-colors group-hover:bg-primary group-hover:text-primary-foreground dark:border-edge">
-                      <Icon className="size-5" strokeWidth={2.25} />
-                    </span>
-                    <h3 className="mt-5 font-heading text-[1.6rem] leading-[1.05] font-bold">{title}</h3>
-                    <p className="mt-2.5 leading-relaxed text-muted-foreground">{body}</p>
-                  </li>
+                      </span>
+                    </td>
+                  </tr>
                 ))}
-              </ul>
-            </div>
+              </tbody>
+            </table>
+
+            <h2 className="mt-24 font-heading text-4xl leading-[1.02] font-bold sm:text-5xl">Features</h2>
+            <ul className="mt-8 grid gap-x-10 gap-y-8 sm:grid-cols-2 lg:grid-cols-4">
+              {features.map(([title, body]) => (
+                <li key={title} className="border-t-2 border-ink pt-4 dark:border-edge">
+                  <h3 className="font-heading text-2xl leading-tight font-bold">{title}</h3>
+                  <p className="mt-1.5 text-muted-foreground">{body}</p>
+                </li>
+              ))}
+            </ul>
           </section>
         </main>
       </div>

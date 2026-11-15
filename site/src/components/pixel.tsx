@@ -49,12 +49,3 @@ export function PixelStar({ className }: { className?: string }) {
     </svg>
   )
 }
-
-/** A pixel cross on a 6 x 6 grid. */
-export function PixelCross({ className }: { className?: string }) {
-  return (
-    <svg viewBox="0 0 6 6" shapeRendering="crispEdges" fill="currentColor" aria-hidden className={className}>
-      <path d="M0 0h2v1h-2zM1 1h2v1h-2zM3 1h2v1h-2zM4 0h2v1h-2zM2 2h2v2h-2zM1 4h2v1h-2zM3 4h2v1h-2zM0 5h2v1h-2zM4 5h2v1h-2z" />
-    </svg>
-  )
-}
