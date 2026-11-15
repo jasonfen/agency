@@ -158,44 +158,47 @@ function drawDesktops(list) {
   }
 }
 
-// GitHub signs in with a device code shown here; the others in the terminal.
-let gh = { state: "idle" };
-let ghTimer = null;
+// GitHub and T3 Code sign in with a short code shown here; the others in
+// the terminal.
+const CODE_LOGINS = { github: "/api/github", t3: "/api/login/t3" };
+const logins = { github: { state: "idle" }, t3: { state: "idle" } };
+const loginTimers = {};
+const busyLogin = (id) => ["starting", "waiting"].includes(logins[id]?.state);
 
-async function pollGitHub() {
-  gh = await api("/api/github");
+async function pollLogin(id) {
+  logins[id] = await api(CODE_LOGINS[id]);
   if (state) drawAccounts(state.accounts);
-  if (gh.state === "starting" || gh.state === "waiting") {
-    ghTimer = setTimeout(pollGitHub, 2000);
+  if (busyLogin(id)) {
+    loginTimers[id] = setTimeout(() => pollLogin(id), 2000);
   } else {
-    ghTimer = null;
-    if (gh.state === "done") refresh();
+    loginTimers[id] = null;
+    if (logins[id].state === "done") refresh();
   }
 }
 
-function githubPanel() {
-  if (gh.state === "starting") return `<p class="row-detail">Asking GitHub for a code.</p>`;
-  if (gh.state === "waiting") {
-    return `<div class="device">
-      <p>Open <a href="${esc(gh.url)}" target="_blank" rel="noopener">${esc(gh.url.replace(/^https:\/\//, ""))}</a> and enter:</p>
-      <p class="device-code mono">${esc(gh.code)}</p>
-      <p class="row-detail">This updates by itself when you are done. <button type="button" class="button" data-action="gh-cancel">Cancel</button></p>
-    </div>`;
-  }
-  if (gh.state === "failed") return `<p class="row-detail">${esc(gh.error)}</p>`;
-  return "";
+function loginPanel(id) {
+  const l = logins[id];
+  if (!l || l.state === "idle" || l.state === "done") return "";
+  if (l.state === "starting") return `<div class="device"><p class="row-detail">Getting a sign-in code.</p></div>`;
+  if (l.state === "failed") return `<div class="device"><p class="row-detail">${esc(l.error)}</p></div>`;
+  const shown = l.url.replace(/^https:\/\//, "").replace(/\?.*$/, "");
+  return `<div class="device">
+    <p>Open <a href="${esc(l.url)}" target="_blank" rel="noopener">${esc(shown)}</a> and enter:</p>
+    <p class="device-code mono">${esc(l.code)}</p>
+    <p class="row-detail">This updates by itself when you are done. <button type="button" class="button" data-login-cancel="${id}">Cancel</button></p>
+  </div>`;
 }
 
 function drawAccounts(list) {
   setHTML($("#account-list"), list.map((a) => {
-    const busy = a.id === "github" && (gh.state === "starting" || gh.state === "waiting");
+    const busy = busyLogin(a.id);
     const button = !a.installed || busy ? ""
       : a.signedIn ? `<button type="button" class="button" data-signin="${a.id}">Sign in again</button>`
       : `<button type="button" class="button button--solid" data-signin="${a.id}">Sign in</button>`;
     return `<div class="row">
       <div><p class="row-name">${esc(a.label)}</p><p class="row-detail">${a.signedIn ? `<span class="on">${esc(a.detail)}</span>` : esc(a.detail)}</p></div>
       ${button}
-    </div>${a.id === "github" ? githubPanel() : ""}`;
+    </div>${a.id in CODE_LOGINS ? loginPanel(a.id) : ""}`;
   }).join(""));
 }
 
@@ -349,22 +352,24 @@ for (const a of links) a.addEventListener("click", () => { picked = a; setTimeou
 
 // ---------------------------------------------------------------- actions
 
-const NAMES = { github: "GitHub", claude: "Claude Code", codex: "Codex", opencode: "OpenCode" };
+const NAMES = { github: "GitHub", claude: "Claude Code", codex: "Codex", opencode: "OpenCode", t3: "T3 Code" };
 
 document.addEventListener("click", async (ev) => {
   const t = ev.target.closest("button");
   if (!t) return;
   const action = t.dataset.action;
 
-  if (t.dataset.signin === "github") {
-    gh = await api("/api/github/start", {});
-    clearTimeout(ghTimer);
-    pollGitHub();
+  if (t.dataset.signin in CODE_LOGINS) {
+    const id = t.dataset.signin;
+    logins[id] = await api(`${CODE_LOGINS[id]}/start`, {});
+    clearTimeout(loginTimers[id]);
+    pollLogin(id);
     return;
   }
-  if (action === "gh-cancel") {
-    gh = await api("/api/github/cancel", {});
-    clearTimeout(ghTimer);
+  if (t.dataset.loginCancel) {
+    const id = t.dataset.loginCancel;
+    logins[id] = await api(`${CODE_LOGINS[id]}/cancel`, {});
+    clearTimeout(loginTimers[id]);
     drawAccounts(state.accounts);
     return;
   }

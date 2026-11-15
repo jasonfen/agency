@@ -181,6 +181,8 @@ TOOLS = [
     ("claude", "Claude Code", "claude", ".claude/.credentials.json"),
     ("codex", "Codex", "codex", ".codex/auth.json"),
     ("opencode", "OpenCode", "opencode", ".local/share/opencode/auth.json"),
+    # T3 keeps no plain sign-in file; the dashboard notes a finished sign-in.
+    ("t3", "T3 Code", "t3", ".local/state/agency/t3-connected"),
 ]
 
 
@@ -578,6 +580,91 @@ class GitHubLogin:
 
 github_login = GitHubLogin()
 
+
+class CliCodeLogin:
+    """A CLI that signs in with a URL and a short code, without a terminal.
+
+    The program runs with no stdin; the page shows the URL and code it
+    prints, and the sign-in is done when the program exits 0.
+    """
+
+    URL = re.compile(r"https://\S+")
+    CODE = re.compile(r"\b([A-Z0-9]{4}-[A-Z0-9]{4,5})\b")
+
+    def __init__(self, cmd, done_file):
+        self.cmd = cmd
+        self.done_file = done_file
+        self.lock = threading.Lock()
+        self.proc = None
+        self.state = {"state": "idle", "code": "", "url": "", "error": ""}
+
+    def start(self):
+        with self.lock:
+            if self.state["state"] in ("starting", "waiting"):
+                return self.state
+            self.state = {"state": "starting", "code": "", "url": "", "error": ""}
+        threading.Thread(target=self._run, daemon=True).start()
+        return self.state
+
+    def cancel(self):
+        with self.lock:
+            proc, self.proc = self.proc, None
+            self.state = {"state": "idle", "code": "", "url": "", "error": ""}
+        if proc:
+            proc.terminate()
+        return self.state
+
+    def _run(self):
+        prog = which(self.cmd[0])
+        if not prog:
+            with self.lock:
+                self.state.update(state="failed", error="It is not installed.")
+            return
+        env = dict(os.environ)
+        env["PATH"] = os.pathsep.join([str(HOME / ".npm-global/bin"), env.get("PATH", "")])
+        try:
+            proc = subprocess.Popen([prog, *self.cmd[1:]], stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
+                                    stderr=subprocess.STDOUT, text=True, errors="replace", env=env, cwd=HOME)
+        except OSError as e:
+            with self.lock:
+                self.state.update(state="failed", error=str(e))
+            return
+        with self.lock:
+            self.proc = proc
+        tail = []
+        for raw in proc.stdout:
+            line = re.sub(r"\x1b\[[0-9;?]*[A-Za-z]", "", raw).strip()
+            tail = (tail + [line])[-3:]
+            with self.lock:
+                if self.proc is not proc:
+                    break
+                url, code = self.URL.search(line), self.CODE.search(line)
+                if url and not self.state["url"]:
+                    self.state.update(url=url.group(0))
+                if code and not self.state["code"]:
+                    self.state.update(code=code.group(1))
+                if self.state["url"] and self.state["code"]:
+                    self.state["state"] = "waiting"
+        ok = proc.wait() == 0
+        with self.lock:
+            if self.proc is not proc:
+                return  # cancelled
+            self.proc = None
+            if ok:
+                self.done_file.parent.mkdir(parents=True, exist_ok=True)
+                self.done_file.touch()
+                self.state = {"state": "done", "code": "", "url": "", "error": ""}
+            else:
+                self.state.update(state="failed", code="", error=tail[-1] if tail else "The sign-in stopped.")
+        accounts.clear()
+
+
+# T3 Connect, plus T3's background service, so `t3 serve` keeps running.
+code_logins = {
+    "t3": CliCodeLogin(["t3", "up", "--connect", "--yes", "--headless"],
+                       HOME / ".local/state/agency/t3-connected"),
+}
+
 # ------------------------------------------------------------------- HTTP ---
 
 TYPES = {".html": "text/html; charset=utf-8", ".css": "text/css; charset=utf-8",
@@ -699,6 +786,9 @@ class Handler(BaseHTTPRequestHandler):
             return self.send_json(apps())
         if path == "/api/github":
             return self.send_json(github_login.state)
+        found = re.fullmatch(r"/api/login/([a-z0-9]+)", path)
+        if found and found.group(1) in code_logins:
+            return self.send_json(code_logins[found.group(1)].state)
         if path == "/api/job":
             job = jobs.status()
             jobs.after_finish(job)
@@ -728,6 +818,10 @@ class Handler(BaseHTTPRequestHandler):
             return self.send_json(github_login.start())
         if path == "/api/github/cancel":
             return self.send_json(github_login.cancel())
+        found = re.fullmatch(r"/api/login/([a-z0-9]+)/(start|cancel)", path)
+        if found and found.group(1) in code_logins:
+            login = code_logins[found.group(1)]
+            return self.send_json(login.start() if found.group(2) == "start" else login.cancel())
         if path == "/api/job/dismiss":
             jobs.dismiss()
             return self.send_json({"ok": True})

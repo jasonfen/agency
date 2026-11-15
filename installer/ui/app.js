@@ -336,12 +336,12 @@ const screens = {
 
   signin() {
     const tools = offered();
-    const later = state.info.apps.filter((a) => ["claude-code", "opencode"].includes(a.id) && state.apps.has(a.id)).map((a) => a.label);
+    const later = state.info.apps.filter((a) => ["claude-code", "opencode", "t3code"].includes(a.id) && state.apps.has(a.id)).map((a) => a.label);
     return {
       html: `<h1>Sign in</h1>
         <p class="lede">This step is optional; you can do this later from the agency dashboard.</p>
         ${tools.length ? `<div class="accounts">${tools.map(accountRow).join("")}</div>` : ""}
-        ${later.length ? `<p class="small muted" style="margin-top: var(--s2)">Sign in to ${esc(later.join(" and "))} from the dashboard after setup.</p>` : ""}`,
+        ${later.length ? `<p class="small muted" style="margin-top: var(--s2)">Sign in to ${esc(new Intl.ListFormat("en", { type: "conjunction" }).format(later))} from the dashboard after setup.</p>` : ""}`,
       actions: [
         { label: "Back", run: () => show("apps") },
         { label: "Continue", primary: true, run: () => show("review") },
