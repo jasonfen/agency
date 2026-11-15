@@ -35,23 +35,26 @@
     </nav>
 
     <main class="main">
-      <section id="overview" aria-label="Notices" class="section">
-        <div id="notice" role="alert"></div>
-        <div id="job"></div>
-      </section>
-
       <section class="section">
         <div class="section-head">
           <h2>App catalog</h2>
           <input id="search" class="input search" type="search" placeholder="Search" aria-label="Search the catalog" spellcheck="false">
         </div>
-        <p class="note">Agents install with npm in a minute or so. Other apps are added to the system and need a rebuild, which can take several minutes. Anything here can be removed again.</p>
+        <p class="note">Agents install with npm in a minute or so. Other apps are added to the system and need a rebuild, which can take several minutes. Pick as many as you like: they go in together, and anything can be removed again.</p>
         <div id="groups" class="chips" role="group" aria-label="Filter by group"></div>
       </section>
 
       <div id="catalog" class="catalog"><p class="muted">Loading the catalog.</p></div>
     </main>
   </div>
+
+  <!-- What is changing now, and what waits: stays at the bottom of the window. -->
+  <aside id="dock" class="dock" aria-live="polite" hidden>
+    <div class="dock-progress" aria-hidden="true"></div>
+    <div id="notice" role="alert"></div>
+    <div id="dock-body"></div>
+    <pre id="dock-log" class="log dock-log" hidden></pre>
+  </aside>
 
   <script src="common.js"></script>
   <script src="apps.js"></script>

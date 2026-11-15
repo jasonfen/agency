@@ -425,42 +425,66 @@ def cmd_apps(args):
         for app in apps:
             mark = "*" if app["id"] in chosen else " "
             say(f" {mark} {app['id']:<14} {app['label']}")
-        say("\n* is on. Change with: agency apps add|remove <id>")
+        say("\n* is on. Change with: agency apps add|remove <id>...")
         return
 
-    by_id = {app["id"]: app for app in apps}
-    if args.id not in by_id:
-        die(f"no app called {args.id}. See: agency apps")
-    app = by_id[args.id]
-    ensure_repo()
-    if args.action == "add":
-        if args.id in chosen:
-            die(f"{args.id} is already on")
-        chosen.append(args.id)
+    if args.action == "change":
+        adds, removes = args.add or [], args.remove or []
+    elif args.action == "add":
+        adds, removes = args.ids + (args.add or []), args.remove or []
     else:
-        if args.id not in chosen:
-            die(f"{args.id} is not on")
-        chosen.remove(args.id)
-    write_setting("apps", nix_list(chosen))
-    commit(f"{'Add' if args.action == 'add' else 'Remove'} app {args.id}", "settings.nix")
+        adds, removes = args.add or [], args.ids + (args.remove or [])
+    adds, removes = list(dict.fromkeys(adds)), list(dict.fromkeys(removes))
+    if not adds and not removes:
+        die("which app? See: agency apps")
+    by_id = {app["id"]: app for app in apps}
+    for app_id in adds + removes:
+        if app_id not in by_id:
+            die(f"no app called {app_id}. See: agency apps")
+    if set(adds) & set(removes):
+        die("an app can't be added and removed at once")
+    # Already in the state asked for: say so and skip it, so a batch from
+    # the dashboard still does the rest.
+    for app_id in [a for a in adds if a in chosen]:
+        say(f"{app_id} is already on.")
+    for app_id in [r for r in removes if r not in chosen]:
+        say(f"{app_id} is already off.")
+    adds = [a for a in adds if a not in chosen]
+    removes = [r for r in removes if r in chosen]
+    if not adds and not removes:
+        return
 
-    if app["kind"] == "npm":
-        # Set the prefix here too: outside a login shell (the dashboard, a
-        # service) npm would otherwise try to write into its read-only store.
-        prefix = Path.home() / ".npm-global"
-        env = dict(os.environ, NPM_CONFIG_PREFIX=str(prefix))
-        env["PATH"] = f"{prefix / 'bin'}:{env.get('PATH', '')}"
-        if args.action == "add":
-            run(["npm", "install", "-g", app["npm"]], env=env)
-            if app.get("setup"):
-                run(["sh", "-c", app["setup"]], env=env)
-        else:
+    ensure_repo()
+    chosen = [c for c in chosen if c not in removes] + adds
+    write_setting("apps", nix_list(chosen))
+    parts = ([f"add {', '.join(adds)}"] if adds else []) + ([f"remove {', '.join(removes)}"] if removes else [])
+    commit(f"Apps: {'; '.join(parts)}", "settings.nix")
+
+    # Agent CLIs (npm) install into this account; the rest need a rebuild,
+    # one for the whole batch.
+    # Set the prefix here too: outside a login shell (the dashboard, a
+    # service) npm would otherwise try to write into its read-only store.
+    prefix = Path.home() / ".npm-global"
+    env = dict(os.environ, NPM_CONFIG_PREFIX=str(prefix))
+    env["PATH"] = f"{prefix / 'bin'}:{env.get('PATH', '')}"
+    for app_id in removes:
+        app = by_id[app_id]
+        if app["kind"] == "npm":
+            say(f"Removing {app['label']} ...")
             if app.get("teardown"):
                 run(["sh", "-c", app["teardown"]], env=env, check=False)
             run(["npm", "uninstall", "-g", app["npm"]], env=env)
-        say(f"Done: {app['label']}.")
-    else:
+    for app_id in adds:
+        app = by_id[app_id]
+        if app["kind"] == "npm":
+            say(f"Installing {app['label']} ...")
+            run(["npm", "install", "-g", app["npm"]], env=env)
+            if app.get("setup"):
+                run(["sh", "-c", app["setup"]], env=env)
+    if any(by_id[a]["kind"] != "npm" for a in adds + removes):
         rebuild()
+    labels = [by_id[a]["label"] for a in adds + removes]
+    say(f"Done: {', '.join(labels)}.")
 
 
 def cmd_desktop(args):
@@ -646,8 +670,10 @@ def main():
     sub.add_parser("auto-update", help="update nixpkgs and rebuild (what the weekly timer runs)")
 
     p = sub.add_parser("apps", help="list, add or remove optional software")
-    p.add_argument("action", nargs="?", default="list", choices=["list", "add", "remove"])
-    p.add_argument("id", nargs="?")
+    p.add_argument("action", nargs="?", default="list", choices=["list", "add", "remove", "change"])
+    p.add_argument("ids", nargs="*", metavar="id")
+    p.add_argument("--add", action="append", metavar="ID", help="with change: an app to add (repeat for more)")
+    p.add_argument("--remove", action="append", metavar="ID", help="with change: an app to remove (repeat for more)")
     p.add_argument("--json", action="store_true", help="list as JSON, for the dashboard")
 
     p = sub.add_parser("desktop", help="list, add or remove virtual desktops")
@@ -666,8 +692,6 @@ def main():
     if args.command == "help":
         parser.print_help()
         return
-    if args.command == "apps" and args.action != "list" and not args.id:
-        die("which app? See: agency apps")
     if args.command == "secret" and args.action != "list" and not args.name:
         die(f"usage: agency secret {args.action} NAME")
 

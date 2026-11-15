@@ -378,7 +378,7 @@ class Jobs:
         st = self.status()
         return bool(st and st["state"] == "running")
 
-    def start(self, kind, title, cmd, stdin=None):
+    def start(self, kind, title, cmd, stdin=None, extra=None):
         with self.lock:
             if self.running():
                 return {"ok": False, "error": "Another change is still running. Wait for it to finish."}
@@ -420,7 +420,8 @@ class Jobs:
                 if old.name.split(".")[0] not in (job_id, "job"):
                     old.unlink(missing_ok=True)
             (STATE / "job.json").write_text(json.dumps(
-                {"id": job_id, "kind": kind, "title": title, "unit": unit, "started": time.time()}))
+                {"id": job_id, "kind": kind, "title": title, "unit": unit, "started": time.time(),
+                 **(extra or {})}))
             return {"ok": True}
 
     def dismiss(self):
@@ -865,14 +866,32 @@ class Handler(BaseHTTPRequestHandler):
             if count == 1:
                 return self.send_json({"ok": False, "error": "Desktop :1 always stays."})
             job = ("desktop", f"Removing desktop :{count}", ["agency", "desktop", "remove"])
-        elif path in ("/api/apps/add", "/api/apps/remove"):
-            app_id = str(data.get("id", ""))
+        elif path in ("/api/apps/add", "/api/apps/remove", "/api/apps/change"):
+            # /api/apps/change takes {"add": [ids], "remove": [ids]}, so a
+            # batch of changes is one job and at most one rebuild. add and
+            # remove take {"id": id}.
+            if path == "/api/apps/change":
+                adds, removes = data.get("add") or [], data.get("remove") or []
+            elif path.endswith("add"):
+                adds, removes = [data.get("id")], []
+            else:
+                adds, removes = [], [data.get("id")]
             known = {a["id"]: a for a in apps()["apps"]}
-            if not APP_ID.match(app_id) or app_id not in known:
+            if not isinstance(adds, list) or not isinstance(removes, list) or not adds + removes:
+                return self.send_json({"ok": False, "error": "No app was chosen."})
+            ids = [str(x) for x in adds + removes]
+            if any(not APP_ID.match(x) or x not in known for x in ids) or len(set(ids)) != len(ids):
                 return self.send_json({"ok": False, "error": "There is no app with that name."})
-            verb = "add" if path.endswith("add") else "remove"
-            label = known[app_id]["label"]
-            job = ("apps", f"{'Adding' if verb == 'add' else 'Removing'} {label}", ["agency", "apps", verb, app_id])
+            adds, removes = [str(x) for x in adds], [str(x) for x in removes]
+            names = lambda xs: joined([known[x]["label"] for x in xs])
+            title = "; ".join(([f"Adding {names(adds)}"] if adds else [])
+                              + ([f"{'removing' if adds else 'Removing'} {names(removes)}"] if removes else []))
+            cmd = ["agency", "apps", "change"]
+            for x in adds:
+                cmd += ["--add", x]
+            for x in removes:
+                cmd += ["--remove", x]
+            return self.send_json(jobs.start("apps", title, cmd, extra={"apps": {"add": adds, "remove": removes}}))
         elif path == "/api/secrets/set":
             name, value = str(data.get("name", "")), data.get("value")
             if not SECRET_NAME.match(name):
