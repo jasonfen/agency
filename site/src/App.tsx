@@ -268,7 +268,7 @@ export default function App() {
             </div>
           </section>
           <section id="why" className="mx-auto max-w-6xl px-5 pb-24 sm:px-8 lg:pb-32">
-            <h2 className="font-heading text-4xl leading-[1.02] font-bold sm:text-5xl">Why not do it yourself?</h2>
+            <h2 className="font-heading text-4xl leading-[1.02] font-bold sm:text-5xl">Why not DIY?</h2>
             <table className="mt-8 w-full border-2 border-ink bg-card text-left text-card-foreground dark:border-edge">
               <thead className="font-heading text-xl">
                 <tr className="border-b-2 border-ink dark:border-edge">
