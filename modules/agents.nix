@@ -55,6 +55,7 @@ in
   # GitHub replaces it with that account (agency-git-identity).
   programs.git = {
     enable = true;
+    lfs.enable = true;
     config.user = {
       name = settings.user;
       email = "${settings.user}@${if config.networking.hostName != "" then config.networking.hostName else "agency"}.local";
@@ -75,10 +76,24 @@ in
     file
     htop
     vim
+    lsof
+    strace
+    rsync
+    p7zip
+
+    # media, documents and data
+    ffmpeg
+    pandoc
+    poppler-utils # pdftotext, pdftoppm, pdfinfo
+    qpdf
+    sqlite
+    duckdb
+    yq-go
 
     # code
     gh
     gitIdentity
+    ast-grep
     nodejs_24
     python3
     uv
