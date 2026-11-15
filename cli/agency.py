@@ -255,7 +255,7 @@ def cmd_status(args):
 
     for n in range(1, desktop_count() + 1):
         state = output(["systemctl", "is-active", f"agency-display@{n}.service"]) or "stopped"
-        say(f"  desktop :{n}  http://{host()}:{6080 + n}/vnc.html   {state}")
+        say(f"  desktop :{n}  http://{host()}:{6080 + n}/   {state}")
 
     profile = output(["readlink", "/nix/var/nix/profiles/system"])
     generation = re.search(r"system-(\d+)-link", profile)
@@ -371,7 +371,7 @@ def cmd_desktop(args):
     if args.action == "list":
         for n in range(1, count + 1):
             state = output(["systemctl", "is-active", f"agency-display@{n}.service"]) or "stopped"
-            say(f"  :{n}  http://{host()}:{6080 + n}/vnc.html   {state}")
+            say(f"  :{n}  http://{host()}:{6080 + n}/   {state}")
         return
     ensure_repo()
     if args.action == "add":
@@ -380,7 +380,7 @@ def cmd_desktop(args):
         commit(f"Add desktop :{count}", "settings.nix")
         rebuild()
         say(f"Desktop :{count} is ready. Use it with: gui -d {count} <app>   or   DISPLAY=:{count}")
-        say(f"Watch it at http://{host()}:{6080 + count}/vnc.html")
+        say(f"Watch it at http://{host()}:{6080 + count}/")
     else:
         if count == 1:
             die("desktop :1 always stays")

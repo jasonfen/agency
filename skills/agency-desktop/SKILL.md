@@ -16,5 +16,5 @@ check before you take one over.
 - Chromium keeps its profile in `~/.config/chromium`, so logins persist.
 
 A person can watch or take over desktop `:N` at
-`http://<hostname>:<6080+N>/vnc.html` over Tailscale. That is the way to
+`http://<hostname>:<6080+N>/` over Tailscale (Selkies). That is the way to
 get them to handle a login, 2FA or a CAPTCHA.

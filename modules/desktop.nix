@@ -1,6 +1,6 @@
 # The virtual desktops. Each is an X11 display that exists only in memory,
 # and it is where GUI apps run. Agents drive one with xdotool and
-# screenshots; you watch or take over from a browser.
+# screenshots; you watch or take over from a browser, through Selkies.
 #
 # Display :1 is always there. `desktops` in settings.nix sets how many run
 # (:1, :2, ...), so agents that use the GUI at the same time each get their
@@ -10,10 +10,10 @@
 #            gui -d 2 chromium         start an app on :2
 #            DISPLAY=:1 xdotool ...    click and type
 #            DISPLAY=:1 scrot x.png    screenshot
-#   you:     http://<hostName>:6081/vnc.html   desktop :1 (6082 is :2, ...)
+#   you:     http://<hostName>:6081/   desktop :1 (6082 is :2, ...)
 #
-# Ports: display :N is VNC port 5900+N on localhost, and web port 6080+N
-# over Tailscale only (see remote.nix).
+# Ports: display :N is web port 6080+N, over Tailscale only (see
+# remote.nix). The X server itself listens on no port at all.
 #
 # X11 is deliberate: it lets one program see and control another, which is
 # what computer use needs and what Wayland forbids.
@@ -41,9 +41,23 @@ let
     exec ${pkgs.util-linux}/bin/setsid -f "$@" >/dev/null 2>&1
   '';
 
-  # The web viewer's port depends on the display number.
-  novnc = pkgs.writeShellScript "agency-novnc" ''
-    exec ${pkgs.novnc}/bin/novnc --listen $((6080 + $1)) --vnc localhost:$((5900 + $1))
+  selkies = pkgs.callPackage ../pkgs/selkies.nix { };
+  width = lib.head (lib.splitString "x" settings.desktopGeometry);
+  height = lib.last (lib.splitString "x" settings.desktopGeometry);
+
+  # Selkies streams display :N to a browser at port 6080+N. The size stays
+  # fixed whatever the browser's window: agents count on their coordinates
+  # and screenshots, so a person who opens a desktop must not resize it.
+  # Audio, printing and gamepads are off: the desktops have none.
+  viewer = pkgs.writeShellScript "agency-selkies" ''
+    exec ${lib.getExe selkies} \
+      --addr 0.0.0.0 --port $((6080 + $1)) \
+      --enable-basic-auth false \
+      --manual-resolution true --manual-width ${width} --manual-height ${height} \
+      --audio-enabled false --microphone-enabled false \
+      --gamepad-enabled false --webcam-enabled false \
+      --printing-enabled false \
+      --ui-title "Desktop :$1"
   '';
 
   # One desktop is three services, started and stopped together.
@@ -64,15 +78,15 @@ in
     wants = [
       "agency-display@%i.service"
       "agency-wm@%i.service"
-      "agency-novnc@%i.service"
+      "agency-selkies@%i.service"
     ];
   };
 
-  # The display server. No password: it only listens on localhost, and the
-  # web viewer is reachable over Tailscale only.
+  # The display server, in memory only. Local programs reach it through its
+  # socket in /tmp/.X11-unix; it listens on no network port.
   systemd.services."agency-display@" =
-    part "Virtual desktop :%i (Xvnc)"
-      "${pkgs.tigervnc}/bin/Xvnc :%i -geometry ${settings.desktopGeometry} -depth 24 -SecurityTypes None -localhost -AlwaysShared";
+    part "Virtual desktop :%i (Xvfb)"
+      "${pkgs.xorg-server}/bin/Xvfb :%i -screen 0 ${settings.desktopGeometry}x24 -nolisten tcp";
 
   # A window manager that only draws, moves and resizes windows.
   systemd.services."agency-wm@" =
@@ -83,15 +97,22 @@ in
         environment.DISPLAY = ":%i";
       };
 
-  # Web viewer for the desktop. Its start script needs `ps` and `hostname`.
-  systemd.services."agency-novnc@" =
-    lib.recursiveUpdate (part "Browser access to desktop :%i (noVNC)" "${novnc} %i")
+  # Browser access to the desktop. No password, like the display: the port
+  # is reachable over Tailscale only. Each desktop gets its own runtime
+  # directory, because Selkies keeps sockets there with fixed names.
+  systemd.services."agency-selkies@" =
+    lib.recursiveUpdate (part "Browser access to desktop :%i (Selkies)" "${viewer} %i")
       {
         after = [ "agency-display@%i.service" ];
-        path = [
-          pkgs.procps
-          pkgs.inetutils # hostname
-        ];
+        bindsTo = [ "agency-display@%i.service" ];
+        environment = {
+          DISPLAY = ":%i";
+          XDG_RUNTIME_DIR = "/run/agency-selkies/%i";
+        };
+        serviceConfig = {
+          RuntimeDirectory = "agency-selkies/%i";
+          RuntimeDirectoryMode = "0700";
+        };
       };
 
   # Starts desktops :1 to :count at boot.

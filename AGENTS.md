@@ -86,7 +86,7 @@ DISPLAY=:1 xdotool type 'hello'
 ```
 
 A human can watch or take over desktop `:N` at
-`http://<this machine's name>:<6080+N>/vnc.html` over Tailscale (`:1` is
+`http://<this machine's name>:<6080+N>/` over Tailscale (`:1` is
 port 6081). When a site needs a login or 2FA, ask the human to do it there;
 the browser profile persists, so you stay signed in afterwards.
 
@@ -124,7 +124,7 @@ alone. Add a skill by adding a folder to `skills/` and rebuilding.
 | `modules/agents.nix` | The agent account and tools |
 | `modules/apps.nix`, `modules/firstboot.nix` | Apply the chosen apps |
 | `modules/remote.nix` | SSH, Tailscale, firewall |
-| `modules/desktop.nix` | The virtual desktops |
+| `modules/desktop.nix`, `pkgs/selkies.nix` | The virtual desktops, and Selkies, which shows them in a browser |
 | `modules/cli.nix`, `cli/agency.py` | The `agency` command |
 | `modules/secrets.nix`, `secrets/` | Encrypted secrets (sops-nix) |
 | `modules/skills.nix`, `skills/` | Skills and instructions for agent CLIs |
