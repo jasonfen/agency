@@ -6,6 +6,9 @@
 #   npm    = "name"    a command-line tool installed into the agent account
 #                      with `npm install -g`, so it can update itself
 #
+# An npm entry may also have `setup`, a command the agent account runs once
+# the package is installed, and `teardown`, run before it is removed.
+#
 # To add your own, copy an entry. Labels must not contain "|" or ",".
 { pkgs, settings }:
 [
@@ -29,6 +32,10 @@
     id = "t3code";
     label = "T3 Code";
     npm = "t3";
+    # A systemd user service, so it survives reboots. T3 writes the unit
+    # itself, because `t3 update` points it at each new version.
+    setup = "t3 service install";
+    teardown = "t3 service uninstall";
   }
 
   # Apps and tools

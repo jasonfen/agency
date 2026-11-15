@@ -52,6 +52,8 @@
         inherit (app) id label;
         kind = if app ? npm then "npm" else "system";
         npm = app.npm or null;
+        setup = app.setup or null;
+        teardown = app.teardown or null;
       }) (import ./apps.nix { pkgs = nixpkgs.legacyPackages.${system}; inherit settings; });
 
       packages.${system} = {

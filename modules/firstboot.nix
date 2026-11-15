@@ -17,6 +17,7 @@
 # Watch it with: journalctl -fu agency-firstboot
 {
   config,
+  lib,
   pkgs,
   settings,
   ...
@@ -25,6 +26,12 @@ let
   notes = "/var/lib/agency/firstboot";
   user = settings.user;
   home = config.users.users.${settings.user}.home;
+
+  # `setup` commands from the catalog, by npm package.
+  catalog = import ../apps.nix { inherit pkgs settings; };
+  setups = lib.concatMapStrings (app: ''
+    ${lib.escapeShellArg app.npm}) as_user ${lib.escapeShellArg app.setup} || true ;;
+  '') (builtins.filter (app: app ? npm && app ? setup) catalog);
 in
 {
   systemd.services.agency-firstboot = {
@@ -94,9 +101,23 @@ in
         sleep 5
       done
 
-      if [ -s ${notes}/npm-packages ]; then
+      # as_user COMMAND: run COMMAND as the agent, with its user services.
+      uid=$(id -u ${user})
+      as_user() {
         runuser -u ${user} -- env HOME=${home} NPM_CONFIG_PREFIX=${home}/.npm-global \
-          npm install -g $(tr '\n' ' ' <${notes}/npm-packages)
+          PATH=${home}/.npm-global/bin:$PATH \
+          XDG_RUNTIME_DIR=/run/user/$uid \
+          DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/$uid/bus \
+          ${pkgs.runtimeShell} -c "$1"
+      }
+      if [ -s ${notes}/npm-packages ]; then
+        as_user "npm install -g $(tr '\n' ' ' <${notes}/npm-packages)"
+        systemctl start user@$uid.service || true
+        while read -r pkg; do
+          case "$pkg" in
+          ${setups}
+          esac
+        done <${notes}/npm-packages
       fi
       rm -f ${notes}/npm-packages
 
