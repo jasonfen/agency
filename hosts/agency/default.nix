@@ -10,6 +10,7 @@
     ../../modules/remote.nix # how you and agents reach the machine
     ../../modules/desktop.nix # the virtual desktop for GUI apps
     ../../modules/laptop.nix # run lid-closed, never sleep
+    ../../modules/battery.nix # cap the battery charge
     ../../modules/cli.nix # the `agency` command
     ../../modules/secrets.nix # encrypted secrets for agents
     ../../modules/skills.nix # what agent CLIs are told about this machine

@@ -7,6 +7,7 @@ makes to /etc/nixos is committed, so `git log` there shows what happened.
 
 import argparse
 import getpass
+import glob
 import json
 import os
 import re
@@ -255,6 +256,33 @@ def rebuild(mode="switch"):
         say("Done. The new system is running and is the newest boot menu entry.")
 
 
+def battery_status():
+    """One line on each battery's charge and its charge limit, or ''."""
+    parts = []
+    for bat in sorted(glob.glob("/sys/class/power_supply/*")):
+        def read(name):
+            try:
+                with open(os.path.join(bat, name)) as f:
+                    return f.read().strip()
+            except OSError:
+                return ""
+        if read("type") != "Battery":
+            continue
+        line = f"{read('capacity') or '?'}% {read('status').lower()}"
+        end = read("charge_control_end_threshold")
+        if end and end not in ("0", "100"):
+            line += f", stops at {end}%"
+        elif "[Long_Life]" in read("charge_types"):
+            line += ", long-life charging"
+        elif any(open(m).read().strip() == "1" for m in
+                 glob.glob("/sys/bus/platform/drivers/ideapad_acpi/*/conservation_mode")):
+            line += ", conservation mode"
+        else:
+            line += ", no charge limit"
+        parts.append(line)
+    return "; ".join(parts)
+
+
 # ------------------------------------------------------------ commands ---
 
 
@@ -272,6 +300,9 @@ def cmd_status(args):
     head = output(["git", "-C", REPO, "log", "-1", "--format=%h %s (%cr)"]) or "not linked yet, run: agency update"
     say(f"  system     generation {generation.group(1) if generation else '?'}, repo at {head}")
     say(f"  apps       {' '.join(setting_list('apps')) or 'none'}")
+    battery = battery_status()
+    if battery:
+        say(f"  battery    {battery}")
     names = secret_names()
     say(f"  secrets    {', '.join(names) if names else 'none'}")
 

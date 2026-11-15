@@ -29,6 +29,11 @@
   # the GUI at the same time its own. `agency desktop add` changes this.
   desktops = 1;
 
+  # Stop charging the battery at this percent, to keep it healthy on a
+  # machine that is always plugged in. null: charge to 100%. Does nothing
+  # on hardware without a charge limit. See modules/battery.nix.
+  batteryChargeLimit = 80;
+
   # Tailscale logins, besides this machine's owner, that may use the web dashboard.
   dashboardUsers = [ ];
 

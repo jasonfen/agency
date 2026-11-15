@@ -35,5 +35,4 @@ Claude Code starts with Remote Control on. To turn it off, set `remoteControlAtS
 ## To do
 
 1. Secure Boot (lanzaboote, then re-enrol the TPM).
-2. Cap battery charge at 80%.
-3. Nvidia, only if GPU compute is needed.
+2. Nvidia, only if GPU compute is needed.
