@@ -336,6 +336,7 @@ def cmd_update(args):
     say("Fetching ...")
     git("fetch", "-q", "origin")
     behind = int(output(["git", "-C", REPO, "rev-list", "--count", "HEAD..@{u}"]) or 0)
+    before = output(["git", "-C", REPO, "rev-parse", "HEAD"])
     if behind:
         say(f"{behind} new commit(s):")
         git("log", "--format=  %h %s", "HEAD..@{u}")
@@ -351,6 +352,12 @@ def cmd_update(args):
         commit("Update flake inputs", "flake.lock")
     if not behind and not args.packages:
         say("Already up to date. (`agency update --packages` also updates nixpkgs.)")
+        return
+    # The download page (site/) lives in this repo but is not part of the
+    # system: when nothing else changed, there is nothing to rebuild.
+    changed = output(["git", "-C", REPO, "diff", "--name-only", before, "HEAD"]).splitlines()
+    if behind and not args.packages and changed and all(p.startswith("site/") for p in changed):
+        say("Only the download page changed. Nothing to rebuild.")
         return
     rebuild()
 
