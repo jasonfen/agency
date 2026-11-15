@@ -459,7 +459,9 @@ class Jobs:
         st = self.status()
         return bool(st and st["state"] == "running")
 
-    def start(self, kind, title, cmd, stdin=None, extra=None):
+    def start(self, kind, title, cmd, stdin=None, extra=None, done=None):
+        """title says what runs ("Adding Blender"); done, what it did once
+        it worked ("Added Blender")."""
         with self.lock:
             if self.running():
                 return {"ok": False, "busy": True, "error": "Another change is still running. Wait for it to finish."}
@@ -503,7 +505,7 @@ class Jobs:
                 if old.name.split(".")[0] not in (job_id, "job", "queue"):
                     old.unlink(missing_ok=True)
             (STATE / "job.json").write_text(json.dumps(
-                {"id": job_id, "kind": kind, "title": title, "started": time.time(),
+                {"id": job_id, "kind": kind, "title": title, "done": done or title, "started": time.time(),
                  **runner, **(extra or {})}))
             return {"ok": True}
 
@@ -539,14 +541,16 @@ jobs = Jobs()
 def start_apps_change(adds, removes):
     known = {a["id"]: a for a in apps()["apps"]}
     names = lambda xs: joined([known.get(x, {}).get("label", x) for x in xs])
-    title = "; ".join(([f"Adding {names(adds)}"] if adds else [])
-                      + ([f"{'removing' if adds else 'Removing'} {names(removes)}"] if removes else []))
+    def said(add, remove):  # ("Adding", "removing") -> "Adding X; removing Y"
+        parts = ([f"{add} {names(adds)}"] if adds else []) + ([f"{remove} {names(removes)}"] if removes else [])
+        return "; ".join(parts)[:1].upper() + "; ".join(parts)[1:]
+    title, done = said("Adding", "removing"), said("Added", "removed")
     cmd = ["agency", "apps", "change"]
     for x in adds:
         cmd += ["--add", x]
     for x in removes:
         cmd += ["--remove", x]
-    return jobs.start("apps", title, cmd, extra={"apps": {"add": adds, "remove": removes}})
+    return jobs.start("apps", title, cmd, extra={"apps": {"add": adds, "remove": removes}}, done=done)
 
 
 class AppQueue:
@@ -1071,15 +1075,15 @@ class Handler(BaseHTTPRequestHandler):
         count = desktop_count()
         job = None
         if path == "/api/update":
-            job = ("update", "Updating", ["agency", "update"])
+            job = ("update", "Updating", ["agency", "update"], "Updated")
         elif path == "/api/rollback":
-            job = ("rollback", "Going back to the previous system", ["agency", "rollback"])
+            job = ("rollback", "Going back to the previous system", ["agency", "rollback"], "Went back to the previous system")
         elif path == "/api/desktops/add":
-            job = ("desktop", f"Adding desktop :{count + 1}", ["agency", "desktop", "add"])
+            job = ("desktop", f"Adding desktop :{count + 1}", ["agency", "desktop", "add"], f"Added desktop :{count + 1}")
         elif path == "/api/desktops/remove":
             if count == 1:
                 return self.send_json({"ok": False, "error": "Desktop :1 always stays."})
-            job = ("desktop", f"Removing desktop :{count}", ["agency", "desktop", "remove"])
+            job = ("desktop", f"Removing desktop :{count}", ["agency", "desktop", "remove"], f"Removed desktop :{count}")
         elif path == "/api/apps/queue":
             # {"id": id, "want": "add" | "remove" | null}. null takes the app
             # out of the queue again.
@@ -1092,7 +1096,7 @@ class Handler(BaseHTTPRequestHandler):
                 return self.send_json({"ok": False, "error": "The value is empty."})
             # The value goes to `agency secret set` on stdin, never in argv.
             return self.send_json(jobs.start("secrets", f"Saving {name}", ["agency", "secret", "set", name],
-                                             stdin=value.rstrip("\n") + "\n"))
+                                             stdin=value.rstrip("\n") + "\n", done=f"Saved {name}"))
         elif path == "/api/export":
             passphrase = data.get("passphrase")
             if not isinstance(passphrase, str) or len(passphrase) < MIN_PASSPHRASE:
@@ -1108,8 +1112,9 @@ class Handler(BaseHTTPRequestHandler):
             out = EXPORTS / f"agency-{socket.gethostname().split('.')[0]}-{time.strftime('%Y%m%d-%H%M')}.agency"
             home = bool(data.get("home"))
             cmd = ["agency", "export", "-o", str(out)] + (["--home"] if home else [])
-            return self.send_json(jobs.start("export", "Exporting this machine" + (" and its home folder" if home else ""),
-                                             cmd, stdin=passphrase + "\n"))
+            what = "this machine" + (" and its home folder" if home else "")
+            return self.send_json(jobs.start("export", f"Exporting {what}", cmd, stdin=passphrase + "\n",
+                                             done=f"Exported {what}"))
         elif path == "/api/export/delete":
             if jobs.running() and (jobs.current() or {}).get("kind") == "export":
                 return self.send_json({"ok": False, "error": "The export is still being made."})
@@ -1124,7 +1129,8 @@ class Handler(BaseHTTPRequestHandler):
             if not isinstance(passphrase, str) or not passphrase or "\n" in passphrase:
                 return self.send_json({"ok": False, "error": "Enter the passphrase the export was made with."})
             cmd = ["agency", "import", str(UPLOAD)] + ([] if data.get("home", True) else ["--no-home"])
-            return self.send_json(jobs.start("import", "Importing a machine's setup", cmd, stdin=passphrase + "\n"))
+            return self.send_json(jobs.start("import", "Importing a machine's setup", cmd, stdin=passphrase + "\n",
+                                             done="Imported a machine's setup"))
         elif path == "/api/import/discard":
             if jobs.running() and (jobs.current() or {}).get("kind") == "import":
                 return self.send_json({"ok": False, "error": "The import is still running."})
@@ -1134,11 +1140,11 @@ class Handler(BaseHTTPRequestHandler):
             name = str(data.get("name", ""))
             if not SECRET_NAME.match(name):
                 return self.send_json({"ok": False, "error": "There is no secret with that name."})
-            job = ("secrets", f"Removing {name}", ["agency", "secret", "remove", name])
+            job = ("secrets", f"Removing {name}", ["agency", "secret", "remove", name], f"Removed {name}")
         if job is None:
             return self.send_json({"error": "not found"}, 404)
-        kind, title, cmd = job
-        return self.send_json(jobs.start(kind, title, cmd))
+        kind, title, cmd, done = job
+        return self.send_json(jobs.start(kind, title, cmd, done=done))
 
     # --- exports, in and out
 

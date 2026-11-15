@@ -155,7 +155,7 @@ function drawDock(job, more = {}) {
     detail = lastLine ? `<span class="mono">${esc(lastLine)}</span>` : "Starting.";
   } else if (job?.state === "done") {
     mark = "is-done";
-    title = `Done: ${lower(job.title)}`;
+    title = `Done: ${lower(job.done || job.title)}`;
   } else if (job?.state === "failed") {
     mark = "is-failed";
     title = `It failed: ${lower(job.title)}`;
