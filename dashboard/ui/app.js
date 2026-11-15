@@ -49,6 +49,8 @@ function drawDesktops(list) {
 // System: CPU and memory over the last ten minutes, and every disk.
 
 const pct = (n) => `${Math.round(n)}%`;
+const SPAN = 600;   // seconds shown
+const COLS = 60;    // columns of SPAN / COLS seconds each
 
 function uptimeText(sec) {
   const d = Math.floor(sec / 86400);
@@ -57,74 +59,81 @@ function uptimeText(sec) {
   return d ? `${d} d ${h} h` : h ? `${h} h ${m} min` : `${m} min`;
 }
 
-// A chart of percentages, 0 to 100, over a fixed window that ends at the
-// newest sample. points: [[time, percent, text for the tooltip], ...].
+const clock = (t) => new Date(t * 1000).toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
+
+// Samples ([time, percent]) into COLS columns, newest on the right; each
+// column is the mean of its samples, or null where there are none.
+function columns(points) {
+  const end = points.length ? points[points.length - 1][0] : 0;
+  const sums = Array.from({ length: COLS }, () => [0, 0]);
+  for (const [t, v] of points) {
+    const k = Math.floor((end - t) / (SPAN / COLS));
+    if (k < COLS) { sums[COLS - 1 - k][0] += v; sums[COLS - 1 - k][1]++; }
+  }
+  return sums.map(([sum, n], i) => n ? { v: sum / n, t: end - (COLS - 1 - i) * (SPAN / COLS) } : null);
+}
+
+// A column chart in el. Hovering a column puts its value in the card's big
+// number and its time under the name; leaving puts back the newest.
+// fmt(percent) is the big number's text.
 const charts = {};
 
-function chart(el, points, span) {
+function chart(el, points, now, when, fmt) {
   let c = charts[el.id];
   if (!c) {
-    el.innerHTML = `<svg viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">
-        <line class="spark-grid" x1="0" x2="100" y1="50" y2="50" vector-effect="non-scaling-stroke"/>
-        <line class="spark-grid" x1="0" x2="100" y1="0" y2="0" vector-effect="non-scaling-stroke"/>
-        <path class="spark-area"/><path class="spark-line" vector-effect="non-scaling-stroke"/>
-      </svg>
-      <span class="spark-tick" style="top:0">100%</span><span class="spark-tick" style="top:50%">50%</span>
-      <span class="spark-axis spark-axis--start">${Math.round(span / 60)} min ago</span>
-      <span class="spark-axis spark-axis--end">now</span>
-      <div class="spark-cross" hidden></div><div class="spark-dot" hidden></div><div class="spark-tip" hidden></div>`;
-    c = charts[el.id] = { points: [], at: null, span };
+    const w = 100 / COLS;
+    el.innerHTML = `<svg viewBox="0 0 100 100" preserveAspectRatio="none" shape-rendering="crispEdges" aria-hidden="true">
+        ${Array.from({ length: COLS }, (_, i) => `<rect class="spark-well" x="${(i * w + w * 0.14).toFixed(3)}" width="${(w * 0.72).toFixed(3)}" y="0" height="100"/>`).join("")}
+        ${Array.from({ length: COLS }, (_, i) => `<rect class="spark-bar" x="${(i * w + w * 0.14).toFixed(3)}" width="${(w * 0.72).toFixed(3)}" y="100" height="0"/>`).join("")}
+      </svg>`;
+    el.insertAdjacentHTML("afterend", `<div class="spark-axis"><span>10 min ago</span><span>Now</span></div>`);
+    c = charts[el.id] = { cols: [], at: null };
     const move = (x) => {
       const r = el.getBoundingClientRect();
-      c.at = Math.min(1, Math.max(0, (x - r.left) / r.width));
-      hover(el, c);
+      c.at = Math.min(COLS - 1, Math.max(0, Math.floor(((x - r.left) / r.width) * COLS)));
+      hover(c);
     };
     el.addEventListener("pointermove", (e) => move(e.clientX));
     el.addEventListener("pointerdown", (e) => move(e.clientX));
-    el.addEventListener("pointerleave", () => { c.at = null; hover(el, c); });
+    el.addEventListener("pointerleave", () => { c.at = null; hover(c); });
   }
-  c.points = points;
-  c.end = points.length ? points[points.length - 1][0] : 0;
-  const x = (t) => 100 - ((c.end - t) / span) * 100;
-  const y = (v) => 100 - Math.min(100, Math.max(0, v));
-  const shown = points.filter((p) => c.end - p[0] <= span);
-  const line = shown.map((p, i) => `${i ? "L" : "M"}${x(p[0]).toFixed(2)} ${y(p[1]).toFixed(2)}`).join("");
-  el.querySelector(".spark-line").setAttribute("d", line);
-  el.querySelector(".spark-area").setAttribute("d", shown.length
-    ? `${line}L${x(shown[shown.length - 1][0]).toFixed(2)} 100L${x(shown[0][0]).toFixed(2)} 100Z` : "");
-  const last = shown[shown.length - 1];
+  Object.assign(c, { el, now, when, fmt, cols: columns(points) });
+  const bars = el.querySelectorAll(".spark-bar");
+  c.cols.forEach((col, i) => {
+    // Anything above zero gets at least a sliver, so idle is not empty.
+    const h = col ? Math.max(3, Math.min(100, col.v)) : 0;
+    bars[i].setAttribute("y", (100 - h).toFixed(2));
+    bars[i].setAttribute("height", h.toFixed(2));
+  });
+  const last = c.cols[COLS - 1];
   el.setAttribute("role", "img");
-  el.setAttribute("aria-label", last ? `${el.dataset.label} over the last ${Math.round(span / 60)} minutes, now ${pct(last[1])}` : el.dataset.label);
-  hover(el, c);
+  el.setAttribute("aria-label", `${el.dataset.label} over the last ten minutes${last ? `, now ${pct(last.v)}` : ""}`);
+  hover(c);
 }
 
-// The crosshair and tooltip at the sample nearest the pointer.
-function hover(el, c) {
-  const [cross, dot, tip] = [".spark-cross", ".spark-dot", ".spark-tip"].map((s) => el.querySelector(s));
-  const t = c.at === null ? null : c.end - (1 - c.at) * c.span;
-  let best = null;
-  if (t !== null) for (const p of c.points) if (!best || Math.abs(p[0] - t) < Math.abs(best[0] - t)) best = p;
-  cross.hidden = dot.hidden = tip.hidden = !best;
-  if (!best) return;
-  const left = 100 - ((c.end - best[0]) / c.span) * 100;
-  cross.style.left = dot.style.left = `${left}%`;
-  dot.style.top = `${100 - Math.min(100, best[1])}%`;
-  const when = c.end - best[0] < 5 ? "now"
-    : new Date(best[0] * 1000).toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit", second: "2-digit" });
-  tip.innerHTML = `<strong>${esc(best[2])}</strong> · ${esc(when)}`;
-  // Keep the tooltip inside the card at the edges.
-  tip.style.left = `${Math.min(85, Math.max(15, left))}%`;
+function hover(c) {
+  const col = c.at === null ? null : c.cols[c.at];
+  c.el.classList.toggle("is-hover", c.at !== null);
+  c.el.querySelectorAll(".spark-bar").forEach((b, i) => b.classList.toggle("is-on", i === c.at));
+  if (col && c.at < COLS - 1) {
+    c.now.textContent = c.fmt(col.v);
+    c.when.textContent = `At ${clock(col.t)}`;
+  } else if (c.at !== null && !col) {
+    c.now.textContent = "–";
+    c.when.textContent = "No reading";
+  } else {
+    const last = c.cols[COLS - 1];
+    c.now.textContent = last ? c.fmt(last.v) : "–";
+    c.when.textContent = "Now";
+  }
 }
 
 function drawSystem(v) {
   if (!v) return;
-  const span = 600;
   const h = v.history || [];
-  const now = h[h.length - 1];
   const mem = v.memory;
 
-  $("#cpu-now").textContent = now ? pct(now[1]) : "–";
-  chart($("#cpu-chart"), h.map((p) => [p[0], p[1], pct(p[1])]), span);
+  chart($("#cpu-chart"), h.map((p) => [p[0], p[1]]), $("#cpu-now"), $("#cpu-when"), pct);
   const cpuBits = [`${v.cores} cores`];
   if (v.load) cpuBits.push(`load ${v.load[0].toFixed(2)}`);
   if (v.temp) cpuBits.push(`${v.temp} °C`);
@@ -132,31 +141,35 @@ function drawSystem(v) {
   $("#cpu-detail").textContent = cpuBits.join(" · ");
 
   if (mem) {
-    $("#mem-now").textContent = pct((100 * mem.used) / mem.total);
-    chart($("#mem-chart"), h.filter((p) => p[2] !== null)
-      .map((p) => [p[0], (100 * p[2]) / mem.total, `${gb(p[2])} GB`]), span);
-    const bits = [`${gb(mem.used)} of ${gb(mem.total)} GB used`];
-    if (v.swap) bits.push(`swap ${gb(v.swap.used)} of ${gb(v.swap.total)} GB`);
+    chart($("#mem-chart"), h.filter((p) => p[2] !== null).map((p) => [p[0], (100 * p[2]) / mem.total]),
+      $("#mem-now"), $("#mem-when"), pct);
+    const bits = [`${gb(mem.used)} of ${gb(mem.total)} GB in use`];
+    if (v.swap) bits.push(`swap ${gb(v.swap.used)} GB`);
     $("#mem-detail").textContent = bits.join(" · ");
   }
 
   const disks = v.disks || [];
-  setHTML($("#disk-list"), disks.length ? disks.map((d) => {
-    const kind = [d.kind, d.removable ? "removable" : "", `${gb(d.size)} GB`].filter(Boolean).join(" · ");
-    const where = d.system ? "System disk" : d.mounts.length ? `Mounted at ${d.mounts[0]}` : "Not mounted";
+  // The big number: the share used of all the space mounted from them.
+  const used = disks.reduce((n, d) => n + d.used, 0);
+  const room = disks.reduce((n, d) => n + d.fsSize, 0);
+  const tb = (b) => (b >= 1e12 ? `${(b / 1e12).toFixed(1)} TB` : `${gb(b)} GB`);
+  $("#disk-now").textContent = room ? pct((100 * used) / room) : "–";
+  $("#disk-when").textContent = disks.length
+    ? `${disks.length} disk${disks.length === 1 ? "" : "s"}, ${tb(disks.reduce((n, d) => n + d.size, 0))}` : "None found";
+  setHTML($("#disk-list"), disks.map((d) => {
+    const where = d.system ? "system disk" : d.mounts.length ? d.mounts[0] : "not mounted";
+    const kind = [d.kind, d.removable ? "removable" : ""].filter(Boolean).join(", ");
     const share = d.fsSize ? (100 * d.used) / d.fsSize : 0;
     const full = share >= 90;
-    return `<div class="row disk">
-      <div class="row-main">
-        <p class="row-name">${esc(d.model || d.name)}</p>
-        <p class="row-detail"><span class="mono">${esc(d.name)}</span> · ${esc(kind)} · ${esc(where)}</p>
-      </div>
-      <div class="disk-end">
-        <p class="disk-use">${d.fsSize ? `${gb(d.used)} of ${gb(d.fsSize)} GB used${full ? " · <strong>almost full</strong>" : ""}` : `<span class="muted">Nothing mounted from it</span>`}</p>
-        <div class="meter${full ? " is-full" : ""}${d.fsSize ? "" : " is-empty"}" role="meter" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${Math.round(share)}" aria-label="${esc(d.model || d.name)} space used"><div class="meter-fill" style="width:${share.toFixed(1)}%"></div></div>
-      </div>
+    // At least one block when anything is used.
+    const width = share >= 0.5 ? `max(6px, ${share.toFixed(1)}%)` : "0";
+    return `<div class="disk" title="${esc(d.model || d.name)}">
+      <p class="disk-name">${esc(d.model || d.name)}</p>
+      <p class="disk-use">${d.fsSize ? `${gb(d.used)} <span class="muted">/ ${gb(d.fsSize)} GB</span>` : `<span class="muted">${gb(d.size)} GB</span>`}</p>
+      <div class="meter${full ? " is-full" : ""}" role="meter" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${Math.round(share)}" aria-label="${esc(d.model || d.name)} space used"><div class="meter-fill" style="width:${width}"></div></div>
+      <p class="disk-detail"><span class="mono">${esc(d.name)}</span>${kind ? ` · ${esc(kind)}` : ""} · ${esc(where)}${full ? ` · <span class="disk-full">almost full</span>` : ""}</p>
     </div>`;
-  }).join("") : `<p class="row muted">No disks found.</p>`);
+  }).join(""));
 }
 
 // The home page lists the apps that are on; the catalog (/apps) has the rest.

@@ -51,17 +51,29 @@
         <h2>System</h2>
         <div class="vitals">
           <article class="card vital">
-            <div class="vital-head"><p class="card-name">CPU</p><p class="vital-now mono" id="cpu-now">&nbsp;</p></div>
+            <div class="vital-head">
+              <div><p class="card-name">CPU</p><p class="vital-when" id="cpu-when">Now</p></div>
+              <p class="vital-now" id="cpu-now">&nbsp;</p>
+            </div>
             <div class="spark" id="cpu-chart" data-label="CPU"></div>
             <p class="card-detail" id="cpu-detail">&nbsp;</p>
           </article>
           <article class="card vital">
-            <div class="vital-head"><p class="card-name">Memory</p><p class="vital-now mono" id="mem-now">&nbsp;</p></div>
+            <div class="vital-head">
+              <div><p class="card-name">Memory</p><p class="vital-when" id="mem-when">Now</p></div>
+              <p class="vital-now" id="mem-now">&nbsp;</p>
+            </div>
             <div class="spark" id="mem-chart" data-label="Memory"></div>
             <p class="card-detail" id="mem-detail">&nbsp;</p>
           </article>
+          <article class="card vital">
+            <div class="vital-head">
+              <div><p class="card-name">Disks</p><p class="vital-when" id="disk-when">&nbsp;</p></div>
+              <p class="vital-now" id="disk-now">&nbsp;</p>
+            </div>
+            <div id="disk-list" class="disks"></div>
+          </article>
         </div>
-        <div id="disk-list" class="list"><p class="row muted">&nbsp;</p></div>
       </section>
 
       <section id="desktops" class="section">
