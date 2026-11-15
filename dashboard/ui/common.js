@@ -44,7 +44,7 @@ function showNotice(text) {
 
 function drawHeader(s) {
   $("#hostname").textContent = s.hostname;
-  document.title = `${s.hostname} - agency`;
+  document.title = "agency";
   const pill = $("#pill");
   const labels = { running: "Running", degraded: "Something failed", starting: "Starting", initializing: "Starting", stopping: "Stopping" };
   pill.className = "pill " + (s.state === "running" ? "is-good" : s.state === "degraded" ? "is-bad" : "");

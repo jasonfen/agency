@@ -71,7 +71,7 @@ function drawDesktops(list) {
       : d.windows === 0 ? "No windows open"
       : `${d.windows} window${d.windows === 1 ? "" : "s"} open`;
     const remove = d.n === last && d.n > 1
-      ? `<button type="button" class="button" data-action="desktop-remove" ${dis()}>Remove</button>` : "";
+      ? `<button type="button" class="button button--danger" data-action="desktop-remove" ${dis()}>Remove</button>` : "";
     return `<article class="card">
       <div class="shot" data-shot="${d.n}">${d.running ? `<img alt="What desktop :${d.n} shows" hidden>` : "Stopped"}</div>
       <div class="card-foot">

@@ -51,7 +51,7 @@ function cardAction(a) {
       <button type="button" class="button" data-undo="${esc(a.id)}">Undo</button>`;
   }
   return a.on
-    ? `<button type="button" class="button" data-app="${esc(a.id)}" data-on="1">Remove</button>`
+    ? `<button type="button" class="button button--danger" data-app="${esc(a.id)}" data-on="1">Remove</button>`
     : `<button type="button" class="button button--solid" data-app="${esc(a.id)}" data-on="0">Add</button>`;
 }
 
@@ -197,7 +197,7 @@ async function refresh() {
       showNotice(s.error);
     } else {
       drawHeader(s);
-      document.title = `Apps - ${s.hostname} - agency`;
+      document.title = "Apps - agency";
       const wasRunning = running();
       job = s.job;
       // A change finished: reload which apps are on, then send the queue.
