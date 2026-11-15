@@ -153,11 +153,13 @@ function drawDock(job, more = {}) {
   const buttons = job ? `<button type="button" class="button" data-action="dock-log">${dock.logOpen ? "Hide the log" : "Show the log"}</button>
     ${running ? "" : `<button type="button" class="button" data-action="job-dismiss">Close</button>`}` : "";
   setHTML($("#dock-body"), `<div class="dock-row">
-      <span class="job-mark dock-mark ${mark}"></span>
-      <div class="dock-text">
-        <p class="dock-title">${title}</p>
-        ${detail ? `<p class="dock-detail">${detail}</p>` : ""}
-        ${then}
+      <div class="dock-main">
+        <span class="job-mark dock-mark ${mark}"></span>
+        <div class="dock-text">
+          <p class="dock-title">${title}</p>
+          ${detail ? `<p class="dock-detail">${detail}</p>` : ""}
+          ${then}
+        </div>
       </div>
       <div class="buttons">${buttons}</div>
     </div>`);
