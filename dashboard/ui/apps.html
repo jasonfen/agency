@@ -1,0 +1,59 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Apps - agency</title>
+  <link rel="icon" href="data:,">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <svg width="0" height="0" aria-hidden="true" style="position:absolute">
+    <symbol id="pointer" viewBox="0 0 54 81">
+      <path class="pointer-tip" d="M0 0h9v9h-9z"/>
+      <path d="M0 9h18v9h-18zM0 18h27v9h-27zM0 27h36v9h-36zM0 36h45v9h-45zM0 45h54v9h-54zM0 54h36v9h-36zM0 63h9v9h-9zM27 63h18v9h-18zM36 72h18v9h-18z"/>
+    </symbol>
+  </svg>
+
+  <header class="bar">
+    <a class="brand" href="/">
+      <svg class="brand-mark" shape-rendering="crispEdges" aria-hidden="true"><use href="#pointer"/></svg>
+      <span class="brand-name" id="hostname">agency</span>
+      <span class="pill" id="pill"><span class="pill-mark"></span><span id="pill-text">Loading</span></span>
+    </a>
+    <span class="who" id="who"></span>
+  </header>
+
+  <div class="frame">
+    <nav class="nav" aria-label="Sections">
+      <a href="/#desktops">Desktops</a>
+      <a href="/#terminal">Terminal</a>
+      <a href="/#accounts">Accounts</a>
+      <a href="/apps" class="is-current" aria-current="page">Apps</a>
+      <a href="/#secrets">Secrets</a>
+      <a href="/#system">System</a>
+    </nav>
+
+    <main class="main">
+      <section id="overview" aria-label="Notices" class="section">
+        <div id="notice" role="alert"></div>
+        <div id="job"></div>
+      </section>
+
+      <section class="section">
+        <div class="section-head">
+          <h2>App catalog</h2>
+          <input id="search" class="input search" type="search" placeholder="Search" aria-label="Search the catalog" spellcheck="false">
+        </div>
+        <p class="note">Agents install with npm in a minute or so. Other apps are added to the system and need a rebuild, which can take several minutes. Anything here can be removed again.</p>
+        <div id="groups" class="chips" role="group" aria-label="Filter by group"></div>
+      </section>
+
+      <div id="catalog" class="catalog"><p class="muted">Loading the catalog.</p></div>
+    </main>
+  </div>
+
+  <script src="common.js"></script>
+  <script src="apps.js"></script>
+</body>
+</html>

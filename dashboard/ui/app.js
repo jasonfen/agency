@@ -4,34 +4,11 @@
 // from it. Changes (update, apps, secrets, desktops, rollback) start a job
 // on the server; while one runs, the others wait and its log shows at the top.
 
-const $ = (sel) => document.querySelector(sel);
-const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
-
 let state = null;
 let appList = null;
 let jobRunning = false;
 let appsAfterJob = null;
 const shots = {}; // desktop number -> object URL of its newest picture
-
-// ----------------------------------------------------------------- server
-
-async function api(path, body) {
-  const opts = body === undefined
-    ? { cache: "no-store" }
-    : { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) };
-  const r = await fetch(path, opts);
-  const data = await r.json().catch(() => ({}));
-  if (!r.ok && !data.error) data.error = `The server said ${r.status}.`;
-  return data;
-}
-
-async function startJob(path, body = {}) {
-  showNotice("");
-  const result = await api(path, body);
-  if (!result.ok) showNotice(result.error || "That did not start.");
-  await refresh();
-  return result.ok;
-}
 
 // ----------------------------------------------------------------- pieces
 
@@ -57,54 +34,9 @@ function ago(stamp) {
   return day(stamp);
 }
 
-function setHTML(el, html) {
-  if (el.dataset.html !== html) {
-    el.innerHTML = html;
-    el.dataset.html = html;
-    return true;
-  }
-  return false;
-}
-
-function showNotice(text) {
-  setHTML($("#notice"), text
-    ? `<div class="notice"><span>${esc(text)}</span><button type="button" class="button" data-action="notice-close">Close</button></div>`
-    : "");
-}
-
 const dis = () => (jobRunning ? "disabled" : "");
 
 // --------------------------------------------------------------- sections
-
-function drawHeader(s) {
-  $("#hostname").textContent = s.hostname;
-  document.title = `${s.hostname} - agency`;
-  const pill = $("#pill");
-  const labels = { running: "Running", degraded: "Something failed", starting: "Starting", initializing: "Starting", stopping: "Stopping" };
-  pill.className = "pill " + (s.state === "running" ? "is-good" : s.state === "degraded" ? "is-bad" : "");
-  $("#pill-text").textContent = labels[s.state] || s.state;
-  pill.title = s.state === "degraded" ? "A service failed. Over SSH: systemctl --failed" : "";
-  setHTML($("#who"), `Signed in through Tailscale as <span class="mono">${esc(s.login)}</span>`);
-}
-
-function drawJob(job) {
-  if (!job) return setHTML($("#job"), "");
-  const results = {
-    running: "Running. This page stays up to date.",
-    done: "Done.",
-    failed: job.code === null ? "It stopped before it finished." : "It failed. The log says why.",
-  };
-  const html = `<div class="job is-${job.state}">
-    <div class="job-head">
-      <p class="job-title"><span class="job-mark"></span>${esc(job.title)} <span class="job-result">${results[job.state]}</span></p>
-      ${job.state === "running" ? "" : `<button type="button" class="button" data-action="job-dismiss">Close</button>`}
-    </div>
-    <pre class="log" id="log">${esc(job.log.join("\n")) || "Starting."}</pre>
-  </div>`;
-  const log = $("#log");
-  const atEnd = !log || log.scrollHeight - log.scrollTop - log.clientHeight < 24;
-  if (setHTML($("#job"), html) && atEnd) $("#log").scrollTop = $("#log").scrollHeight;
-}
 
 function drawUpdates(u) {
   let text;
@@ -205,19 +137,18 @@ function drawAccounts(list) {
   }).join(""));
 }
 
+// The home page lists the apps that are on; the catalog (/apps) has the rest.
 function drawApps() {
   if (!appList) return;
   if (appList.error) {
     setHTML($("#app-list"), `<p class="row muted">The list did not load: ${esc(appList.error)}</p>`);
     return;
   }
-  setHTML($("#app-list"), appList.apps.map((a) => `<div class="row">
-      <div><p class="row-name">${esc(a.label)}</p><p class="row-detail mono">${esc(a.id)}</p></div>
-      <div class="row-end">
-        ${a.on ? `<span class="on">On</span>` : ""}
-        <button type="button" class="button ${a.on ? "" : "button--solid"}" data-app="${esc(a.id)}" data-on="${a.on ? 1 : 0}" ${dis()}>${a.on ? "Remove" : "Add"}</button>
-      </div>
-    </div>`).join("") || `<p class="row muted">The catalog is empty.</p>`);
+  const on = appList.apps.filter((a) => a.on);
+  setHTML($("#app-list"), on.map((a) => `<div class="row row--app">
+      ${appLogo(a)}
+      <div class="row-main"><p class="row-name">${esc(a.label)}</p><p class="row-detail">${esc(a.group)}</p></div>
+    </div>`).join("") || `<p class="row muted">No apps yet.</p>`);
 }
 
 function drawSecrets(names) {
@@ -382,12 +313,6 @@ document.addEventListener("click", async (ev) => {
     $("#term-note").innerHTML = `Signing in to ${esc(NAMES[tool] || tool)}. Follow the steps in the terminal. <button type="button" class="button" data-action="term-shell">Back to the shell</button>`;
     $("#terminal").scrollIntoView();
     return;
-  }
-  if (t.dataset.app) {
-    const on = t.dataset.on === "1";
-    const app = appList.apps.find((a) => a.id === t.dataset.app);
-    if (on && !confirm(`Remove ${app ? app.label : t.dataset.app}?`)) return;
-    return startJob(on ? "/api/apps/remove" : "/api/apps/add", { id: t.dataset.app });
   }
   if (t.dataset.secretRemove) {
     const name = t.dataset.secretRemove;

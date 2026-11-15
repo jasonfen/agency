@@ -372,6 +372,9 @@ def cmd_apps(args):
     apps = catalog()
     chosen = setting_list("apps")
     if args.action == "list":
+        if args.json:
+            print(json.dumps([dict(app, on=app["id"] in chosen) for app in apps]))
+            return
         for app in apps:
             mark = "*" if app["id"] in chosen else " "
             say(f" {mark} {app['id']:<14} {app['label']}")
@@ -597,6 +600,7 @@ def main():
     p = sub.add_parser("apps", help="list, add or remove optional software")
     p.add_argument("action", nargs="?", default="list", choices=["list", "add", "remove"])
     p.add_argument("id", nargs="?")
+    p.add_argument("--json", action="store_true", help="list as JSON, for the dashboard")
 
     p = sub.add_parser("desktop", help="list, add or remove virtual desktops")
     p.add_argument("action", nargs="?", default="list", choices=["list", "add", "remove"])

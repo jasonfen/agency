@@ -207,15 +207,27 @@ def accounts():
 
 @cached(600)
 def apps():
-    ok, out, err = sh("agency", "apps", timeout=180)
-    if not ok:
+    ok, out, err = sh("agency", "apps", "list", "--json", timeout=180)
+    try:
+        listed = json.loads(out) if ok else None
+    except ValueError:
+        listed = None
+    if not isinstance(listed, list):
         last = (err or out).strip().splitlines()
         return {"apps": [], "error": last[-1] if last else "agency apps failed"}
     found = []
-    for line in out.splitlines():
-        m = re.match(r"^ ([* ]) (\S+)\s+(.*)$", line)
-        if m and APP_ID.match(m.group(2)):
-            found.append({"id": m.group(2), "label": m.group(3).strip(), "on": m.group(1) == "*"})
+    for app in listed:
+        if not APP_ID.match(str(app.get("id", ""))):
+            continue
+        found.append({
+            "id": app["id"],
+            "label": app.get("label") or app["id"],
+            "group": app.get("group") or "Other",
+            "description": app.get("description") or "",
+            "kind": app.get("kind"),
+            "on": bool(app.get("on")),
+            "logo": (UI / "logos" / f"{app['id']}.svg").is_file(),
+        })
     return {"apps": found, "error": ""}
 
 
@@ -669,9 +681,18 @@ code_logins = {
 # ------------------------------------------------------------------- HTTP ---
 
 TYPES = {".html": "text/html; charset=utf-8", ".css": "text/css; charset=utf-8",
-         ".js": "text/javascript; charset=utf-8", ".woff2": "font/woff2"}
+         ".js": "text/javascript; charset=utf-8", ".woff2": "font/woff2",
+         ".svg": "image/svg+xml"}
 OPEN_FILES = {"/screen": "screen.html", "/screen.css": "screen.css", "/screen.js": "screen.js"}
-FILES = {"/": "index.html", "/index.html": "index.html", "/app.js": "app.js", "/style.css": "style.css"}
+FILES = {
+    "/": "index.html",
+    "/index.html": "index.html",
+    "/apps": "apps.html",
+    "/app.js": "app.js",
+    "/apps.js": "apps.js",
+    "/common.js": "common.js",
+    "/style.css": "style.css",
+}
 SHOT = re.compile(r"^/api/desktops/(\d+)/shot$")
 
 
@@ -768,6 +789,11 @@ class Handler(BaseHTTPRequestHandler):
             return self.proxy_terminal()
         if path in FILES:
             return self.send_file(UI / FILES[path])
+        if path.startswith("/logos/"):
+            name = path[len("/logos/"):]
+            if re.match(r"^[a-z0-9][a-z0-9-]*\.svg$", name):
+                return self.send_file(UI / "logos" / name)
+            return self.send_json({"error": "not found"}, 404)
         if path == "/api/state":
             job = jobs.status()
             jobs.after_finish(job)

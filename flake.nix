@@ -54,6 +54,8 @@
         npm = app.npm or null;
         setup = app.setup or null;
         teardown = app.teardown or null;
+        group = app.group or (if app ? npm then "Agents" else "Other");
+        description = app.description or "";
       }) (import ./apps.nix { pkgs = nixpkgs.legacyPackages.${system}; inherit settings; });
 
       packages.${system} = {
