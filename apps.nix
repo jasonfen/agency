@@ -3,11 +3,14 @@
 #
 # An entry is one of two kinds:
 #   system = { ... }   NixOS settings, applied by a system rebuild
-#   npm    = "name"    a command-line tool installed into the agent account
-#                      with `npm install -g`, so it can update itself
+#   npm    = "name"    a command-line tool from the npm registry, installed
+#                      into the agent account with `bun add -g`, so it can
+#                      update itself
 #
 # An npm entry may also have `setup`, a command the agent account runs once
-# the package is installed, and `teardown`, run before it is removed.
+# the package is installed, `teardown`, run before it is removed, and
+# `signin`, the command that signs it in to its service, shown once it is
+# installed (for tools that sign in from a terminal, not from Settings).
 #
 # Every entry has a `group` and a one-line `description` for the
 # dashboard's app catalog, and may have a logo: dashboard/ui/logos/<id>.svg.
@@ -47,6 +50,14 @@
     # itself, because `t3 update` points it at each new version.
     setup = "t3 service install";
     teardown = "t3 service uninstall";
+  }
+  {
+    id = "cloudflare";
+    label = "Cloudflare CLI";
+    group = "Development";
+    description = "cf, for Cloudflare: Workers, DNS, R2 and the rest of the account.";
+    npm = "cf";
+    signin = "cf auth login --no-browser";
   }
 
   # Apps and tools

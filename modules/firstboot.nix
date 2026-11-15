@@ -5,7 +5,7 @@
 # and this service acts on them the first time the machine has a network:
 #
 #   rebuild        rebuild the system, because settings.nix was changed
-#   npm-packages   tools to `npm install -g` for the agent account
+#   npm-packages   tools to `bun add -g` for the agent account
 #   password-hash  the console password chosen in setup, as a hash
 #   home/          sign-ins made on the setup screen (GitHub, agent CLIs),
 #                  copied into the agent's home
@@ -53,6 +53,7 @@ in
       pkgs.util-linux
       pkgs.shadow
       pkgs.nodejs_24
+      pkgs.bun
       pkgs.gh
     ];
     environment.HOME = "/root";
@@ -104,14 +105,15 @@ in
       # as_user COMMAND: run COMMAND as the agent, with its user services.
       uid=$(id -u ${user})
       as_user() {
-        runuser -u ${user} -- env HOME=${home} NPM_CONFIG_PREFIX=${home}/.npm-global \
-          PATH=${home}/.npm-global/bin:$PATH \
+        runuser -u ${user} -- env HOME=${home} BUN_INSTALL=${home}/.bun \
+          NPM_CONFIG_PREFIX=${home}/.npm-global \
+          PATH=${home}/.bun/bin:${home}/.npm-global/bin:$PATH \
           XDG_RUNTIME_DIR=/run/user/$uid \
           DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/$uid/bus \
           ${pkgs.runtimeShell} -c "$1"
       }
       if [ -s ${notes}/npm-packages ]; then
-        as_user "npm install -g $(tr '\n' ' ' <${notes}/npm-packages)"
+        as_user "bun add -g --trust $(tr '\n' ' ' <${notes}/npm-packages)"
         systemctl start user@$uid.service || true
         while read -r pkg; do
           case "$pkg" in

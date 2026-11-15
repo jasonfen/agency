@@ -16,7 +16,7 @@ Don't edit `/etc` by hand. Commit what you change. Test risky changes (boot, net
 
 ## No rebuild needed
 
-Your home directory is yours: `npm install -g`, `uv`, `pip install --user`, `nix shell nixpkgs#<pkg>`, `docker`. Downloaded binaries run as-is.
+Your home directory is yours: `bun add -g` (use Bun over npm where you can; `npm install -g` works too), `uv`, `pip install --user`, `nix shell nixpkgs#<pkg>`, `docker`. Downloaded binaries run as-is.
 
 `agency apps add|remove <id>` switches optional software (catalog: `apps.nix`).
 

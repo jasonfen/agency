@@ -44,11 +44,14 @@ in
     binfmt = true;
   };
 
-  # `npm install -g` and `pip install --user` land in the home directory,
-  # so agent CLIs install and update themselves without a system rebuild.
+  # `bun add -g`, `npm install -g` and `pip install --user` land in the
+  # home directory, so agent CLIs install and update themselves without a
+  # system rebuild. Bun is the usual one; npm is there for tools that
+  # insist on it.
+  environment.variables.BUN_INSTALL = "$HOME/.bun";
   environment.variables.NPM_CONFIG_PREFIX = "$HOME/.npm-global";
   environment.extraInit = ''
-    export PATH="$HOME/.npm-global/bin:$HOME/.local/bin:$PATH"
+    export PATH="$HOME/.bun/bin:$HOME/.npm-global/bin:$HOME/.local/bin:$PATH"
   '';
 
   # A default identity, so `git commit` never stops to ask. Signing in to
@@ -95,6 +98,7 @@ in
     gitIdentity
     ast-grep
     nodejs_24
+    bun
     python3
     uv
     gcc

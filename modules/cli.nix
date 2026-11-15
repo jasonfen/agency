@@ -28,6 +28,7 @@ let
               pkgs.ssh-to-age
               pkgs.qrencode
               pkgs.nodejs_24
+              pkgs.bun
               config.nix.package
               config.system.build.nixos-rebuild
               config.services.tailscale.package

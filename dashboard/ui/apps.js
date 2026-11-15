@@ -65,8 +65,8 @@ function card(a) {
       </div>
       ${a.on ? `<span class="on">Installed</span>` : ""}
     </div>
-    <p class="app-text">${esc(a.description)}</p>
-    <div class="app-foot"><span class="tag">${a.kind === "npm" ? "npm" : "System"}</span><span class="app-action">${cardAction(a)}</span></div>
+    <p class="app-text">${esc(a.description)}${a.on && a.signin ? `<br>Sign in with <code>${esc(a.signin)}</code>` : ""}</p>
+    <div class="app-foot"><span class="tag">${a.kind === "npm" ? "Bun" : "System"}</span><span class="app-action">${cardAction(a)}</span></div>
   </article>`;
 }
 

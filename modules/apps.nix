@@ -2,10 +2,11 @@
 # apps.nix.
 #
 # Entries of the `system` kind become system settings here. Entries of the
-# `npm` kind are installed into the agent account, where they update
-# themselves, so Nix cannot install them. Instead agency-npm-apps checks at
-# boot, and after a rebuild that changes the list, that each chosen npm
-# package is installed, and installs and sets up any that are missing. So a
+# `npm` kind are installed into the agent account with Bun, where they
+# update themselves, so Nix cannot install them. Instead agency-npm-apps
+# checks at boot, and after a rebuild that changes the list, that each
+# chosen package is installed (by Bun, or by npm before Bun was the
+# installer), and installs and sets up any that are missing. So a
 # machine rebuilt from settings.nix gets them without the installer or
 # `agency apps add`. It never removes anything: `agency apps remove` does.
 # Watch it with: journalctl -u agency-npm-apps
@@ -46,13 +47,14 @@ in
           unitConfig.ConditionPathExists = "!/var/lib/agency/firstboot";
           path = [
             pkgs.nodejs_24
+            pkgs.bun
             pkgs.curl
             pkgs.coreutils
             pkgs.util-linux
             pkgs.systemd
           ];
           serviceConfig = {
-            # "exec", so boot does not wait for npm. RemainAfterExit, so a
+            # "exec", so boot does not wait for the installs. RemainAfterExit, so a
             # rebuild that changes the list runs it again.
             Type = "exec";
             RemainAfterExit = true;
@@ -63,8 +65,9 @@ in
             uid=$(id -u ${user})
             # as_user COMMAND: run COMMAND as the agent, with its user services.
             as_user() {
-              runuser -u ${user} -- env HOME=${home} NPM_CONFIG_PREFIX=${home}/.npm-global \
-                PATH=${home}/.npm-global/bin:$PATH \
+              runuser -u ${user} -- env HOME=${home} BUN_INSTALL=${home}/.bun \
+                NPM_CONFIG_PREFIX=${home}/.npm-global \
+                PATH=${home}/.bun/bin:${home}/.npm-global/bin:$PATH \
                 XDG_RUNTIME_DIR=/run/user/$uid \
                 DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/$uid/bus \
                 ${pkgs.runtimeShell} -c "$1"
@@ -73,6 +76,7 @@ in
             # ensure PACKAGE SETUP: install PACKAGE if missing, then run SETUP.
             online=
             ensure() {
+              [ -e ${home}/.bun/install/global/node_modules/"$1" ] && return 0
               [ -e ${home}/.npm-global/lib/node_modules/"$1" ] && return 0
               if [ -z "$online" ]; then
                 until curl -fsS --max-time 10 -o /dev/null https://registry.npmjs.org/; do
@@ -82,7 +86,7 @@ in
                 online=1
               fi
               echo "Installing $1"
-              as_user "npm install -g '$1'"
+              as_user "bun add -g --trust '$1'"
               if [ -n "$2" ]; then
                 as_user "$2"
               fi

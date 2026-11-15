@@ -14,6 +14,6 @@ Every rebuild is a boot menu entry, and `agency rollback` returns to the
 previous one. Changes to boot, disks, network or SSH can lock everyone out,
 so be careful with those.
 
-Much needs no rebuild at all: `npm install -g`, `uv`, `pip --user`,
+Much needs no rebuild at all: `bun add -g` (or `npm install -g`), `uv`, `pip --user`,
 `nix shell`, and Docker when it is on. `agency help` lists the rest of the
 command (updates, apps, desktops, secrets).

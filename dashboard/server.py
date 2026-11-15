@@ -87,8 +87,8 @@ def cached(ttl):
 
 
 def which(name):
-    """Find a program, including the agent's npm and pip installs."""
-    extra = [str(HOME / ".npm-global/bin"), str(HOME / ".local/bin")]
+    """Find a program, including the agent's Bun, npm and pip installs."""
+    extra = [str(HOME / ".bun/bin"), str(HOME / ".npm-global/bin"), str(HOME / ".local/bin")]
     return shutil.which(name, path=os.pathsep.join([os.environ.get("PATH", "")] + extra))
 
 
@@ -228,6 +228,7 @@ def apps():
             "group": app.get("group") or "Other",
             "description": app.get("description") or "",
             "kind": app.get("kind"),
+            "signin": app.get("signin") or "",
             "on": bool(app.get("on")),
             "logo": (UI / "logos" / f"{app['id']}.svg").is_file(),
         })
@@ -743,7 +744,7 @@ class CliCodeLogin(CodeLogin):
             self._set(run_id, state="failed", error="It is not installed.")
             return
         env = dict(os.environ)
-        env["PATH"] = os.pathsep.join([str(HOME / ".npm-global/bin"), env.get("PATH", "")])
+        env["PATH"] = os.pathsep.join([str(HOME / ".bun/bin"), str(HOME / ".npm-global/bin"), env.get("PATH", "")])
         try:
             proc = subprocess.Popen([prog, *self.cmd[1:]], stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
                                     stderr=subprocess.STDOUT, text=True, errors="replace", env=env, cwd=HOME)

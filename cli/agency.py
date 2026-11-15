@@ -417,13 +417,15 @@ def catalog():
 
 
 def npm_apps(by_id, adds, removes):
-    """Install and remove the npm apps among adds and removes; return the
-    ids that failed to install."""
-    # Set the prefix here too: outside a login shell (the dashboard, a
-    # service) npm would otherwise try to write into its read-only store.
+    """Install and remove the npm-registry apps among adds and removes;
+    return the ids that failed to install. Bun installs them; npm is only
+    used to remove copies it installed before Bun was the installer."""
+    # Set the locations here too: outside a login shell (the dashboard, a
+    # service) Bun and npm would otherwise write somewhere else.
+    bun_home = Path.home() / ".bun"
     prefix = Path.home() / ".npm-global"
-    env = dict(os.environ, NPM_CONFIG_PREFIX=str(prefix))
-    env["PATH"] = f"{prefix / 'bin'}:{env.get('PATH', '')}"
+    env = dict(os.environ, BUN_INSTALL=str(bun_home), NPM_CONFIG_PREFIX=str(prefix))
+    env["PATH"] = f"{bun_home / 'bin'}:{prefix / 'bin'}:{env.get('PATH', '')}"
     failed = []
     for app_id in removes:
         app = by_id[app_id]
@@ -431,16 +433,21 @@ def npm_apps(by_id, adds, removes):
             say(f"Removing {app['label']} ...")
             if app.get("teardown"):
                 run(["sh", "-c", app["teardown"]], env=env, check=False)
-            run(["npm", "uninstall", "-g", app["npm"]], env=env, check=False)
+            if (bun_home / "install/global/node_modules" / app["npm"]).exists():
+                run(["bun", "remove", "-g", app["npm"]], env=env, check=False)
+            if (prefix / "lib/node_modules" / app["npm"]).exists():
+                run(["npm", "uninstall", "-g", app["npm"]], env=env, check=False)
     for app_id in adds:
         app = by_id[app_id]
         if app["kind"] == "npm":
             say(f"Installing {app['label']} ...")
-            ok = run(["npm", "install", "-g", app["npm"]], env=env, check=False).returncode == 0
+            ok = run(["bun", "add", "-g", "--trust", app["npm"]], env=env, check=False).returncode == 0
             if ok and app.get("setup"):
                 ok = run(["sh", "-c", app["setup"]], env=env, check=False).returncode == 0
             if not ok:
                 failed.append(app_id)
+            elif app.get("signin"):
+                say(f"To sign {app['label']} in, run: {app['signin']}")
     return failed
 
 
@@ -497,7 +504,7 @@ def cmd_apps(args):
             SETTINGS.write_text(before)
             die("nothing was changed: the rebuild failed (see above).")
 
-    # Then agent CLIs, installed with npm into this account. One that fails
+    # Then agent CLIs, installed with Bun into this account. One that fails
     # to install is left off.
     failed = npm_apps(by_id, adds, removes)
     if failed:
@@ -691,7 +698,7 @@ REPO_LEFT_OUT = ("settings.nix", ".sops.yaml", "secrets", "hosts")
 # Left out of the home folder: caches, what apps reinstall, and what names
 # this machine (T3's environment id, Chromium's lock on this host name).
 HOME_LEFT_OUT = [
-    ".cache", ".npm", ".npm-global", ".nix-profile", ".local/state/nix",
+    ".cache", ".npm", ".npm-global", ".bun", ".nix-profile", ".local/state/nix",
     ".local/share/Trash", ".t3", ".local/state/agency/t3-connected", ".dbus",
     "nixos-git-unlinked-*", "nixos-git-broken-*", ".config/chromium/Singleton*",
 ]
@@ -916,7 +923,7 @@ def cmd_import(args):
     finally:
         shutil.rmtree(stage, ignore_errors=True)
 
-    # Agent CLIs come from npm, not the rebuild.
+    # Agent CLIs come from Bun, not the rebuild.
     apps_now = setting_list("apps")
     adds = [a for a in apps_now if a not in apps_before]
     removes = [a for a in apps_before if a not in apps_now]

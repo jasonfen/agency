@@ -139,7 +139,9 @@ in
       AGENCY_UI = "${../dashboard/ui}";
       AGENCY_FONTS = "${../installer/ui/fonts}";
       AGENCY_USER = settings.user;
-      # Where `npm install -g` puts agent CLIs (see modules/agents.nix).
+      # Where `bun add -g` and `npm install -g` put agent CLIs (see
+      # modules/agents.nix).
+      BUN_INSTALL = "${config.users.users.${settings.user}.home}/.bun";
       NPM_CONFIG_PREFIX = "${config.users.users.${settings.user}.home}/.npm-global";
       AGENCY_DASHBOARD_USERS = lib.concatStringsSep " " (settings.dashboardUsers or [ ]);
     };
