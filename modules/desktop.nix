@@ -65,6 +65,182 @@ let
       --ui-title "Desktop :$1"
   '';
 
+  # ---- What a person sees on a desktop. Kept light: a wallpaper, a panel
+  # (tint2) with launchers, open windows and a clock, and a right-click
+  # menu. The panel takes the bottom 30 pixels; maximized windows stop
+  # above it.
+
+  # A terminal that looks better than xterm's defaults.
+  terminal = pkgs.writeShellScriptBin "agency-terminal" ''
+    cd "$HOME"
+    exec ${pkgs.xterm}/bin/xterm -title Terminal -fa "DejaVu Sans Mono" -fs 11 \
+      -bg "#1b1e25" -fg "#d8dae0" -bc -geometry 100x30 "$@"
+  '';
+  terminalDesktop = pkgs.makeDesktopItem {
+    name = "agency-terminal";
+    desktopName = "Terminal";
+    exec = "agency-terminal";
+    icon = "utilities-terminal";
+  };
+
+  # The panel's icons: four from Papirus, copied into a tiny theme so the
+  # system doesn't carry all of Papirus (over 250 MB) for them. Icons it
+  # lacks come from hicolor, where apps install their own.
+  icons = pkgs.runCommand "agency-icons" { } ''
+    dir=$out/share/icons/agency
+    mkdir -p $dir/scalable/apps
+    for icon in utilities-terminal system-file-manager chromium firefox; do
+      cp ${pkgs.papirus-icon-theme}/share/icons/Papirus-Dark/22x22/apps/$icon.svg $dir/scalable/apps/
+    done
+    cat > $dir/index.theme <<'EOF'
+    [Icon Theme]
+    Name=agency
+    Inherits=hicolor
+    Directories=scalable/apps
+
+    [scalable/apps]
+    Size=22
+    MinSize=16
+    MaxSize=256
+    Type=Scalable
+    EOF
+  '';
+
+  # Programs a person may want, in launcher order, with how to start them
+  # and the .desktop file the panel takes the icon from. Ones that are not
+  # installed (Firefox, say) are left out when the desktop starts.
+  apps = [
+    { name = "Terminal"; command = "agency-terminal"; desktop = "agency-terminal.desktop"; }
+    { name = "Files"; command = "pcmanfm"; desktop = "pcmanfm.desktop"; }
+    { name = "Chromium"; command = "chromium"; desktop = "chromium-browser.desktop"; }
+    { name = "Firefox"; command = "firefox"; desktop = "firefox.desktop"; }
+  ];
+  appLines = lib.concatMapStrings (a: "${a.name}|${a.command}|${a.desktop}\n") apps;
+  appList = pkgs.writeText "agency-desktop-apps" appLines;
+
+  # Openbox's right-click menu, made when it is opened.
+  menu = pkgs.writeShellScript "agency-menu" ''
+    echo '<openbox_pipe_menu>'
+    while IFS='|' read -r name command desktop; do
+      command -v "$command" >/dev/null || continue
+      echo "<item label=\"$name\"><action name=\"Execute\"><command>$command</command></action></item>"
+    done < ${appList}
+    echo '<separator/>'
+    echo '<menu id="client-list-combined-menu"/>'
+    echo '</openbox_pipe_menu>'
+  '';
+
+  # Openbox's own settings, with one workspace instead of four (a person
+  # could lose windows on the others) and the menu above.
+  openboxConfig = pkgs.runCommand "agency-openbox-config" { } ''
+    mkdir -p $out/openbox
+    sed 's|<number>4</number>|<number>1</number>|' \
+      ${pkgs.openbox}/etc/xdg/openbox/rc.xml > $out/openbox/rc.xml
+    cat > $out/openbox/menu.xml <<'EOF'
+    <openbox_menu xmlns="http://openbox.org/3.4/menu">
+      <menu id="root-menu" label="agency" execute="${menu}"/>
+    </openbox_menu>
+    EOF
+  '';
+
+  # Draws the wallpaper, writes the panel's settings for the installed
+  # apps, and runs the panel. $1 is the display number.
+  panel = pkgs.writeShellScript "agency-panel" ''
+    set -u
+    dir=$RUNTIME_DIRECTORY
+    font=${pkgs.dejavu_fonts}/share/fonts/truetype
+    ${pkgs.imagemagick}/bin/magick -size ${settings.desktopGeometry} \
+      gradient:'#2a3140'-'#14171d' \
+      -gravity center \
+      -font $font/DejaVuSans-Bold.ttf -pointsize 44 -fill '#ffffff30' \
+      -annotate +0-24 "Desktop :$1" \
+      -font $font/DejaVuSans.ttf -pointsize 15 -fill '#ffffff40' \
+      -annotate +0+26 'Agents use this screen. Start an app from the panel below, or right-click.' \
+      "$dir/wallpaper.png"
+    ${pkgs.hsetroot}/bin/hsetroot -cover "$dir/wallpaper.png"
+
+    launchers=""
+    while IFS='|' read -r name command desktop; do
+      command -v "$command" >/dev/null || continue
+      for d in ${terminalDesktop}/share/applications /run/current-system/sw/share/applications; do
+        if [ -e "$d/$desktop" ]; then
+          launchers="$launchers"$'\n'"launcher_item_app = $d/$desktop"
+          break
+        fi
+      done
+    done < ${appList}
+
+    cat > "$dir/tint2rc" <<EOF
+    # 1: panel  2: active window  3: other windows
+    rounded = 0
+    border_width = 0
+    background_color = #101318 92
+    border_color = #000000 0
+    rounded = 4
+    border_width = 0
+    background_color = #ffffff 20
+    border_color = #000000 0
+    rounded = 4
+    border_width = 0
+    background_color = #ffffff 7
+    border_color = #000000 0
+
+    panel_items = LTC
+    panel_size = 100% 30
+    panel_margin = 0 0
+    panel_padding = 6 3 8
+    panel_position = bottom center horizontal
+    panel_layer = top
+    panel_background_id = 1
+    panel_dock = 0
+    wm_menu = 1
+    strut_policy = follow_size
+    font_shadow = 0
+
+    launcher_padding = 2 0 6
+    launcher_background_id = 0
+    launcher_icon_size = 22
+    launcher_icon_theme = agency
+    launcher_tooltip = 1
+    $launchers
+
+    taskbar_mode = single_desktop
+    taskbar_padding = 6 0 4
+    taskbar_background_id = 0
+    taskbar_name = 0
+    task_icon = 1
+    task_text = 1
+    task_centered = 0
+    task_maximum_size = 220 24
+    task_padding = 6 2 6
+    task_font = DejaVu Sans 9
+    task_font_color = #c9ccd4 100
+    task_active_font_color = #ffffff 100
+    task_background_id = 3
+    task_active_background_id = 2
+    task_iconified_font_color = #8a8f99 100
+    task_iconified_background_id = 0
+    mouse_left = toggle_iconify
+    mouse_middle = close
+
+    time1_format = %H:%M
+    time1_font = DejaVu Sans Bold 9
+    time2_format = %a %-d %b
+    time2_font = DejaVu Sans 7
+    clock_font_color = #c9ccd4 100
+    clock_padding = 6 0
+    clock_background_id = 0
+
+    tooltip_show_timeout = 0.4
+    tooltip_hide_timeout = 0.1
+    tooltip_padding = 6 4
+    tooltip_background_id = 1
+    tooltip_font_color = #e6e8ee 100
+    tooltip_font = DejaVu Sans 9
+    EOF
+    exec ${pkgs.tint2}/bin/tint2 -c "$dir/tint2rc"
+  '';
+
   # Put each desktop's Selkies on the tailnet at https://<name>:6080+N,
   # and take removed desktops off it. HTTPS needs certificates switched on
   # for the tailnet (as for the dashboard); without them it falls back to
@@ -96,7 +272,18 @@ let
     done
   '';
 
-  # One desktop is three services, started and stopped together.
+  # Apps started from the panel or the menu see the system's programs,
+  # icons and fonts, as they would from a shell.
+  desktopPath = [
+    "/run/wrappers"
+    "/run/current-system/sw"
+  ];
+  desktopEnv = {
+    DISPLAY = ":%i";
+    XDG_DATA_DIRS = "/run/current-system/sw/share";
+  };
+
+  # One desktop is four services, started and stopped together.
   part = description: execStart: {
     inherit description;
     partOf = [ "agency-desktop@%i.target" ];
@@ -115,6 +302,7 @@ in
       "agency-display@%i.service"
       "agency-wm@%i.service"
       "agency-selkies@%i.service"
+      "agency-panel@%i.service"
     ];
   };
 
@@ -125,12 +313,37 @@ in
       "${pkgs.xorg-server}/bin/Xvfb :%i -screen 0 ${settings.desktopGeometry}x24 -nolisten tcp";
 
   # A window manager that only draws, moves and resizes windows.
+  # Programs started from its menu are its children, so KillMode=process
+  # lets them outlive a restart of the window manager.
   systemd.services."agency-wm@" =
     lib.recursiveUpdate (part "Window manager for desktop :%i (Openbox)" "${pkgs.openbox}/bin/openbox")
       {
         after = [ "agency-display@%i.service" ];
         bindsTo = [ "agency-display@%i.service" ];
-        environment.DISPLAY = ":%i";
+        path = desktopPath;
+        environment = desktopEnv // {
+          XDG_CONFIG_DIRS = "${openboxConfig}";
+        };
+        serviceConfig = {
+          KillMode = "process";
+          WorkingDirectory = "~";
+        };
+      };
+
+  # The panel at the bottom, and the wallpaper. The same goes for the apps
+  # its launchers start.
+  systemd.services."agency-panel@" =
+    lib.recursiveUpdate (part "Panel and wallpaper for desktop :%i (tint2)" "${panel} %i")
+      {
+        after = [ "agency-wm@%i.service" ];
+        bindsTo = [ "agency-display@%i.service" ];
+        path = desktopPath;
+        environment = desktopEnv;
+        serviceConfig = {
+          KillMode = "process";
+          WorkingDirectory = "~";
+          RuntimeDirectory = "agency-panel/%i";
+        };
       };
 
   # Browser access to the desktop. No password: it listens on localhost,
@@ -186,6 +399,12 @@ in
 
   environment.systemPackages = with pkgs; [
     gui
+    terminal
+    terminalDesktop
+    pcmanfm
+    icons
+    adwaita-icon-theme # what pcmanfm's own buttons use
+    hicolor-icon-theme
     xterm
     xdotool
     scrot

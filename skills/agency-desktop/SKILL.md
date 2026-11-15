@@ -11,6 +11,10 @@ memory. `:1` always runs; `agency desktop` lists the others and
 check before you take one over.
 
 - `gui [-d N] <app>` starts an app detached, on `$DISPLAY` or `:1`.
+- A panel (tint2) takes the bottom 30 pixels, with launchers, the open
+  windows and a clock; maximized windows stop above it. It is there for
+  people who look in, so leave it alone. Use `wmctrl` to find windows
+  rather than clicking the panel.
 - Installed: xdotool, wmctrl, scrot, xclip, ImageMagick. Anything else is
   one `nix shell nixpkgs#...` away.
 - Chromium keeps its profile in `~/.config/chromium`, so logins persist.
