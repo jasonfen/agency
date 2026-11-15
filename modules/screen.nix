@@ -36,8 +36,12 @@ let
   '';
 in
 {
+  # A normal account (UID 1000 and up), not a system one: since systemd 258
+  # a system account's session is "light", with no service manager or bus,
+  # and every `nixos-rebuild switch` then fails to reload its user units.
+  # It has no password and no SSH keys, so nobody can log in as it.
   users.users.${user} = {
-    isSystemUser = true;
+    isNormalUser = true;
     group = user;
     description = "agency status screen";
     home = "/var/lib/${user}";
