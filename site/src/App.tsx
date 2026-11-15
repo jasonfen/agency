@@ -20,6 +20,51 @@ const requirements = [
   'A GitHub account with an SSH key on it',
 ]
 
+/** What you would do by hand, and what agency does instead. */
+const diy = [
+  ['Install Linux, encrypt the disk, wire up TPM unlock', 'One USB stick and five questions'],
+  ['Set up SSH, Tailscale and your keys', 'Your GitHub SSH keys and Tailscale work at first boot'],
+  ['Install each agent CLI and sign it in', 'Pick them on the setup screen, signed in before first boot'],
+  ['Write a prompt explaining the machine', 'Every agent already knows how the machine works'],
+  ['Glue together Xvfb, a window manager and VNC', 'Desktops ready to drive, and to watch in a browser tab'],
+  ['Hope the next config change doesn\'t break it', 'Every change is a git commit. One command rolls it back'],
+]
+
+const features: { title: string; body: ReactNode }[] = [
+  {
+    title: 'Agents know the machine',
+    body: 'Claude Code, Codex and OpenCode start with skills for the desktop, secrets and changing the system. No briefing needed.',
+  },
+  {
+    title: 'Root, with an undo',
+    body: <>Agents get passwordless sudo on NixOS. The whole system lives in one git repo, so a bad change is one <code className="font-mono text-[0.9em] text-foreground">agency rollback</code> away.</>,
+  },
+  {
+    title: 'Desktops you can watch',
+    body: 'GUI apps run on virtual desktops. Watch from any browser, or take over for a login, 2FA or a CAPTCHA.',
+  },
+  {
+    title: 'Secrets, kept encrypted',
+    body: <><code className="font-mono text-[0.9em] text-foreground">agency secret set NAME</code> encrypts a key to the machine. Agents get it as <code className="font-mono text-[0.9em] text-foreground">$NAME</code>, and it never lands in a commit.</>,
+  },
+  {
+    title: 'Updates itself',
+    body: 'Packages update every week, unattended. A failed build changes nothing, and the machine never reboots on its own.',
+  },
+  {
+    title: 'Built for the shelf',
+    body: 'The lid closes and it keeps running. It never sleeps, and charging stops at 80% so the battery lasts as a UPS.',
+  },
+  {
+    title: 'Encrypted, unlocked by TPM',
+    body: 'The disk is encrypted with LUKS and unlocks itself at boot, so it comes back after a power cut with no one there.',
+  },
+  {
+    title: 'A dashboard on your tailnet',
+    body: 'Status, desktops, a terminal, apps and secrets in one page, reachable only over Tailscale. The screen shows a QR code to open it.',
+  },
+]
+
 function Github({ className }: { className?: string }) {
   return (
     <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden className={className}>
@@ -245,6 +290,50 @@ export default function App() {
                 )}
               </div>
             </div>
+          </section>
+          <section id="why" className="relative mx-auto max-w-6xl px-5 pb-24 sm:px-8 lg:pb-32">
+            <div className="grid gap-10 lg:grid-cols-12 lg:gap-12">
+              <div className="lg:col-span-4">
+                <h2 className="font-heading text-4xl leading-[1.02] font-bold sm:text-5xl">Why not do it yourself?</h2>
+                <p className="mt-4 text-lg leading-relaxed text-muted-foreground">
+                  You could. It's a weekend of setup, and then it's yours to maintain. agency does all of it in
+                  one install.
+                </p>
+              </div>
+
+              <div className="border-2 border-ink bg-card text-card-foreground lg:col-span-8 dark:border-edge">
+                <div className="hidden grid-cols-2 border-b-2 border-ink font-heading text-xl font-bold sm:grid dark:border-edge">
+                  <p className="px-5 py-3 text-muted-foreground">Doing it yourself</p>
+                  <p className="border-l-2 border-ink bg-accent px-5 py-3 dark:border-edge">With agency</p>
+                </div>
+                <ul>
+                  {diy.map(([yourself, agency]) => (
+                    <li
+                      key={yourself}
+                      className="grid border-b-2 border-dashed border-foreground/15 last:border-b-0 sm:grid-cols-2"
+                    >
+                      <p className="px-5 pt-4 text-muted-foreground line-through decoration-foreground/30 sm:py-4">
+                        {yourself}
+                      </p>
+                      <p className="flex gap-3 px-5 pt-1.5 pb-4 font-medium sm:border-l-2 sm:border-ink sm:bg-accent/40 sm:py-4 dark:sm:border-edge">
+                        <PixelCheck className="mt-1.5 h-3.5 shrink-0 text-primary" />
+                        {agency}
+                      </p>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            </div>
+
+            <ul className="mt-16 grid gap-px border-2 border-ink bg-ink sm:grid-cols-2 lg:grid-cols-4 dark:border-edge dark:bg-edge">
+              {features.map((feature) => (
+                <li key={feature.title} className="bg-background p-6">
+                  <PixelStar className="h-4 text-primary" />
+                  <h3 className="mt-4 font-heading text-2xl leading-tight font-bold">{feature.title}</h3>
+                  <p className="mt-2 leading-relaxed text-muted-foreground">{feature.body}</p>
+                </li>
+              ))}
+            </ul>
           </section>
         </main>
       </div>
