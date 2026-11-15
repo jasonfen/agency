@@ -163,14 +163,29 @@ def ensure_repo():
     top, so `agency update` can pull new versions in.
     """
     if (REPO / ".git").is_dir():
-        return
+        if git("rev-parse", "--abbrev-ref", "@{u}", check=False, capture=True).returncode == 0:
+            return
+        # A link that stopped halfway: no upstream. Keep it aside and start
+        # again; the machine's settings are in the files themselves.
+        aside = Path.home() / f"nixos-git-unlinked-{int(time.time())}"
+        shutil.move(str(REPO / ".git"), aside)
+        say(f"/etc/nixos was only partly linked. Its old .git is in {aside}.")
     url = setting_string("repo") or DEFAULT_REPO
     say(f"Linking /etc/nixos to {url} ...")
     run(["sudo", "chown", "-R", f"{USER}:users", REPO])
+    try:
+        link(url)
+    except BaseException:
+        # Leave no half-made repo behind, or the next run trusts it.
+        shutil.rmtree(REPO / ".git", ignore_errors=True)
+        raise
+    say("Done. /etc/nixos is now a git repo.")
+
+
+def link(url):
     git("init", "-q", "-b", "main")
     git("remote", "add", "origin", url)
     if git("fetch", "-q", "origin", "main", check=False).returncode != 0:
-        shutil.rmtree(REPO / ".git")
         die(f"could not fetch {url}. Check the network and try again.")
     setup_identity()
 
@@ -183,7 +198,6 @@ def ensure_repo():
     git("reset", "-q", "--mixed", base)
     git("branch", "-q", "--set-upstream-to", "origin/main")
     commit("This machine's settings", ".")
-    say("Done. /etc/nixos is now a git repo.")
 
 
 def commit(message, *paths):
@@ -219,8 +233,13 @@ def clear_switch_unit():
 def rebuild(mode="switch"):
     clear_switch_unit()
     say(f"Rebuilding the system ({mode}) ...")
+    before = output(["readlink", "-f", "/run/current-system"])
     result = run(["sudo", tool("nixos-rebuild"), mode, "--flake", FLAKE], check=False)
     if result.returncode != 0:
+        now = output(["readlink", "-f", "/run/current-system"])
+        if mode == "switch" and now != before and now == output(["readlink", "-f", "/nix/var/nix/profiles/system"]):
+            die("the new system is running, but the switch reported a problem (see above).\n"
+                "Check `systemctl --failed`. `agency rollback` goes back if something is wrong.")
         die("the rebuild failed. The running system did not change.")
     if mode == "switch":
         say("Done. The new system is running and is the newest boot menu entry.")
