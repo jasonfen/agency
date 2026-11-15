@@ -187,9 +187,10 @@ h2 { font: 700 2rem / 1.1 var(--font-display); }
   font-size: 0.875rem;
 }
 .shot img { width: 100%; height: 100%; object-fit: cover; display: block; }
-.card-foot { padding: 0.875rem 1rem; display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 0.75rem 1rem; }
-.card-foot .buttons { flex-wrap: nowrap; margin-left: auto; }
-.card-detail { white-space: nowrap; }
+/* The buttons always get their own row under the name, so Open is in the
+   same place on every card, with or without Remove beside it. */
+.card-foot { padding: 0.875rem 1rem; display: flex; flex-direction: column; gap: 0.75rem; }
+.card-foot .buttons { justify-content: flex-end; }
 .card-name { font-weight: 600; }
 .card-detail { font-size: 0.875rem; color: var(--muted); }
 
