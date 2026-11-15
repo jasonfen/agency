@@ -615,9 +615,26 @@ if [ "$ts_ok" = 1 ]; then
   install -d -m 700 /mnt/var/lib/tailscale
   install -m 600 "$ts_state" /mnt/var/lib/tailscale/tailscaled.state
 fi
-if compgen -G "/etc/NetworkManager/system-connections/*" >/dev/null; then
-  install -d -m 700 /mnt/etc/NetworkManager/system-connections
-  cp -p /etc/NetworkManager/system-connections/* /mnt/etc/NetworkManager/system-connections/
+# Wi-Fi: ask NetworkManager for the file of every Wi-Fi profile, wherever it
+# keeps it (/etc, or /run for a profile held in memory), and copy each one.
+# A profile tied to this stick's name for the card is untied, so it works
+# whatever the installed system calls the card.
+wifi_dir=/mnt/etc/NetworkManager/system-connections
+carried_wifi=0
+while IFS= read -r line; do
+  kind=${line%%:*}
+  file=${line#*:}
+  file=${file//\\:/:}
+  if [ "$kind" = "802-11-wireless" ] && [ -f "$file" ]; then
+    install -d -m 700 "$wifi_dir"
+    target="$wifi_dir/$(basename "$file" .nmconnection).nmconnection"
+    sed '/^interface-name=/d' "$file" >"$target"
+    chmod 600 "$target"
+    carried_wifi=1
+  fi
+done < <(nmcli -g TYPE,FILENAME connection show 2>/dev/null || true)
+if [ "$carried_wifi" = 1 ]; then
+  say "Wi-Fi settings copied to the new system."
 fi
 
 # Optional secrets stick: a second USB drive whose volume label is AGENCY.
