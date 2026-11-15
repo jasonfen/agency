@@ -54,6 +54,18 @@ in
       TimeoutStartSec = "infinity";
     };
     script = ''
+      # The prebuilt system on the stick has no name, so this first boot
+      # starts as "nixos" even though /etc/hostname has the chosen name.
+      # Use the chosen name now, not only after the next restart.
+      use_name() {
+        name=$(tr -d '[:space:]' </etc/hostname 2>/dev/null || true)
+        if [ -n "$name" ] && [ "$(cat /proc/sys/kernel/hostname)" != "$name" ]; then
+          hostnamectl --transient hostname "$name" || true
+          systemctl try-restart avahi-daemon.service || true
+        fi
+      }
+      use_name
+
       # The console password from setup. First, so the console works even
       # when the network does not.
       if [ -s ${notes}/password-hash ]; then
@@ -68,6 +80,7 @@ in
       if [ -e ${notes}/rebuild ]; then
         nixos-rebuild switch --flake path:/etc/nixos#agency
         rm -f ${notes}/rebuild
+        use_name
       fi
 
       if [ -s ${notes}/npm-packages ]; then
