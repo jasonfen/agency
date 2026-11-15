@@ -320,7 +320,7 @@ export default function App() {
 
       <section className="bg-band text-band-foreground">
         <Dither className="-translate-y-full text-band" />
-        <div className="mx-auto grid max-w-6xl gap-12 px-5 pt-12 pb-16 sm:px-8 sm:pt-16 lg:grid-cols-12 lg:gap-12 lg:pb-24">
+        <div className="mx-auto grid max-w-6xl grid-cols-1 gap-12 px-5 pt-12 pb-16 sm:px-8 sm:pt-16 lg:grid-cols-12 lg:gap-12 lg:pb-24">
           <div className="lg:col-span-4">
             <h2 className="font-heading text-4xl leading-[1.02] font-bold sm:text-5xl">
               Setup
@@ -362,7 +362,7 @@ export default function App() {
 
       <section id="download" className="relative">
         <Dither flip className="text-band" />
-        <div className="mx-auto grid max-w-6xl items-start gap-12 px-5 pt-12 pb-20 sm:px-8 lg:grid-cols-12 lg:pt-16 lg:pb-24">
+        <div className="mx-auto grid max-w-6xl grid-cols-1 items-start gap-12 px-5 pt-12 pb-20 sm:px-8 lg:grid-cols-12 lg:pt-16 lg:pb-24">
           <div className="lg:col-span-5">
             <h2 className="font-heading text-4xl leading-[1.02] font-bold sm:text-5xl">What you need</h2>
             <ul className="mt-6 space-y-2.5 text-lg">
