@@ -12,3 +12,6 @@ secrets/*
 !secrets/*.sops.json
 
 __pycache__/
+
+# Claude Code's checkouts for its subagents.
+.claude/worktrees/
