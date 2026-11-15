@@ -145,7 +145,7 @@ function drawDesktops(list) {
       <div class="card-foot">
         <div><p class="card-name">Desktop :${d.n}</p><p class="card-detail">${detail}</p></div>
         <div class="buttons">${remove}
-          <a class="button button--solid" href="http://${esc(host)}:${d.port}/" target="_blank" rel="noopener">Open</a>
+          <a class="button button--solid" href="${location.protocol}//${esc(host)}:${d.port}/" target="_blank" rel="noopener">Open</a>
         </div>
       </div>
     </article>`;

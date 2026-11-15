@@ -104,6 +104,16 @@ def host():
     return socket.gethostname()
 
 
+def desktop_url(n):
+    """Where a person opens desktop :n: the tailnet name `tailscale serve`
+    uses (see desktop.nix), or the plain host name before Tailscale is up."""
+    try:
+        base = Path("/run/agency/dashboard-url").read_text().strip()
+    except OSError:
+        base = f"https://{host()}"
+    return f"{base}:{6080 + n}/"
+
+
 def ask(question):
     if not sys.stdin.isatty():
         die("this needs a person at the keyboard")
@@ -255,7 +265,7 @@ def cmd_status(args):
 
     for n in range(1, desktop_count() + 1):
         state = output(["systemctl", "is-active", f"agency-display@{n}.service"]) or "stopped"
-        say(f"  desktop :{n}  http://{host()}:{6080 + n}/   {state}")
+        say(f"  desktop :{n}  {desktop_url(n)}   {state}")
 
     profile = output(["readlink", "/nix/var/nix/profiles/system"])
     generation = re.search(r"system-(\d+)-link", profile)
@@ -371,7 +381,7 @@ def cmd_desktop(args):
     if args.action == "list":
         for n in range(1, count + 1):
             state = output(["systemctl", "is-active", f"agency-display@{n}.service"]) or "stopped"
-            say(f"  :{n}  http://{host()}:{6080 + n}/   {state}")
+            say(f"  :{n}  {desktop_url(n)}   {state}")
         return
     ensure_repo()
     if args.action == "add":
@@ -380,7 +390,7 @@ def cmd_desktop(args):
         commit(f"Add desktop :{count}", "settings.nix")
         rebuild()
         say(f"Desktop :{count} is ready. Use it with: gui -d {count} <app>   or   DISPLAY=:{count}")
-        say(f"Watch it at http://{host()}:{6080 + count}/")
+        say(f"Watch it at {desktop_url(count)}")
     else:
         if count == 1:
             die("desktop :1 always stays")

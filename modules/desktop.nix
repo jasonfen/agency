@@ -10,14 +10,19 @@
 #            gui -d 2 chromium         start an app on :2
 #            DISPLAY=:1 xdotool ...    click and type
 #            DISPLAY=:1 scrot x.png    screenshot
-#   you:     http://<hostName>:6081/   desktop :1 (6082 is :2, ...)
+#   you:     https://<hostName>.<tailnet>.ts.net:6081/   desktop :1
+#            (6082 is :2, ...; the dashboard links to each)
 #
-# Ports: display :N is web port 6080+N, over Tailscale only (see
-# remote.nix). The X server itself listens on no port at all.
+# Ports: Selkies serves display :N on 127.0.0.1:6080+N, and `tailscale
+# serve` puts that on the tailnet with HTTPS at the same port number.
+# HTTPS is not optional: Selkies decodes video with the browser's WebCodecs,
+# which browsers only allow on https:// pages (and on localhost). The X
+# server itself listens on no port at all.
 #
 # X11 is deliberate: it lets one program see and control another, which is
 # what computer use needs and what Wayland forbids.
 {
+  config,
   lib,
   pkgs,
   settings,
@@ -51,13 +56,44 @@ let
   # Audio, printing and gamepads are off: the desktops have none.
   viewer = pkgs.writeShellScript "agency-selkies" ''
     exec ${lib.getExe selkies} \
-      --addr 0.0.0.0 --port $((6080 + $1)) \
+      --addr 127.0.0.1 --port $((6080 + $1)) \
       --enable-basic-auth false \
       --manual-resolution true --manual-width ${width} --manual-height ${height} \
       --audio-enabled false --microphone-enabled false \
       --gamepad-enabled false --webcam-enabled false \
       --printing-enabled false \
       --ui-title "Desktop :$1"
+  '';
+
+  # Put each desktop's Selkies on the tailnet at https://<name>:6080+N,
+  # and take removed desktops off it. HTTPS needs certificates switched on
+  # for the tailnet (as for the dashboard); without them it falls back to
+  # http://, where the page loads but browsers refuse to decode the video.
+  serve = pkgs.writeShellScript "agency-desktops-serve" ''
+    set -u
+    if [ "$(tailscale status --json 2>/dev/null | jq -r '.BackendState // empty')" != Running ]; then
+      echo "Tailscale is not connected yet; trying again later."
+      exit 0
+    fi
+    served=$(tailscale serve status --json 2>/dev/null || echo '{}')
+    is_served() { printf '%s' "$served" | jq -e --arg p "$1" '(.TCP // {})[$p] != null' >/dev/null; }
+    for n in $(seq 1 ${toString count}); do
+      port=$((6080 + n))
+      is_served $port && continue
+      if timeout 20 tailscale serve --bg --yes --https=$port http://127.0.0.1:$port; then
+        echo "Desktop :$n is at https on port $port"
+      elif timeout 20 tailscale serve --bg --yes --http=$port http://127.0.0.1:$port; then
+        echo "Desktop :$n is at plain http on port $port: switch on HTTPS certificates for the tailnet, or its video will not play"
+      else
+        echo "Could not put desktop :$n on the tailnet"
+      fi
+    done
+    for n in $(seq ${toString (count + 1)} 32); do
+      port=$((6080 + n))
+      if is_served $port; then
+        tailscale serve --https=$port off 2>/dev/null || tailscale serve --http=$port off 2>/dev/null || true
+      fi
+    done
   '';
 
   # One desktop is three services, started and stopped together.
@@ -97,8 +133,8 @@ in
         environment.DISPLAY = ":%i";
       };
 
-  # Browser access to the desktop. No password, like the display: the port
-  # is reachable over Tailscale only. Each desktop gets its own runtime
+  # Browser access to the desktop. No password: it listens on localhost,
+  # and only reaches the tailnet through `tailscale serve` (below). Each desktop gets its own runtime
   # directory, because Selkies keeps sockets there with fixed names.
   systemd.services."agency-selkies@" =
     lib.recursiveUpdate (part "Browser access to desktop :%i (Selkies)" "${viewer} %i")
@@ -114,6 +150,32 @@ in
           RuntimeDirectoryMode = "0700";
         };
       };
+
+  # Runs at boot, after every switch, and then every minute, so the
+  # desktops appear on the tailnet soon after Tailscale is connected.
+  systemd.services.agency-desktops-serve = {
+    description = "Put the virtual desktops on the tailnet";
+    wantedBy = [ "multi-user.target" ];
+    after = [ "tailscaled.service" ];
+    wants = [ "tailscaled.service" ];
+    restartTriggers = [ serve ];
+    path = [
+      config.services.tailscale.package
+      pkgs.jq
+      pkgs.coreutils
+    ];
+    serviceConfig = {
+      Type = "oneshot";
+      ExecStart = serve;
+    };
+  };
+  systemd.timers.agency-desktops-serve = {
+    wantedBy = [ "timers.target" ];
+    timerConfig = {
+      OnBootSec = "1min";
+      OnUnitActiveSec = "1min";
+    };
+  };
 
   # Starts desktops :1 to :count at boot.
   systemd.targets.agency-desktops = {

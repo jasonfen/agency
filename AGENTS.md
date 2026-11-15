@@ -85,9 +85,10 @@ DISPLAY=:1 xdotool mousemove 640 400 click 1
 DISPLAY=:1 xdotool type 'hello'
 ```
 
-A human can watch or take over desktop `:N` at
-`http://<this machine's name>:<6080+N>/` over Tailscale (`:1` is
-port 6081). When a site needs a login or 2FA, ask the human to do it there;
+A human can watch or take over desktop `:N` in the browser, through
+Selkies, at `https://<this machine's tailnet name>:<6080+N>/` (`:1` is port
+6081; `agency desktop list` prints the addresses, and the dashboard links to
+each). When a site needs a login or 2FA, ask the human to do it there;
 the browser profile persists, so you stay signed in afterwards.
 
 The `agency-desktop` skill has the details.
