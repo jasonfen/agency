@@ -64,7 +64,7 @@ function card(a) {
         <p class="app-name">${esc(a.label)}</p>
         <p class="app-id mono">${esc(a.id)}</p>
       </div>
-      ${a.on ? `<span class="on">On</span>` : ""}
+      ${a.on ? `<span class="on">Installed</span>` : ""}
     </div>
     <p class="app-text">${esc(a.description)}</p>
     <div class="app-foot"><span class="tag">${a.kind === "npm" ? "npm" : "System"}</span><span class="app-action">${cardAction(a)}</span></div>
