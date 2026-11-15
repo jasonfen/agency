@@ -29,7 +29,8 @@
       <a href="/#desktops">Desktops</a>
       <a href="/#terminal">Terminal</a>
       <a href="/#accounts">Accounts</a>
-      <a href="/apps" class="is-current" aria-current="page">Apps</a>
+      <a href="/#apps">Apps</a>
+      <a href="/apps" class="nav-sub is-current" aria-current="page">Catalog</a>
       <a href="/#secrets">Secrets</a>
       <a href="/#system">System</a>
     </nav>
@@ -41,7 +42,7 @@
           <input id="search" class="input search" type="search" placeholder="Search" aria-label="Search the catalog" spellcheck="false">
         </div>
         <p class="note">Agents install with npm in a minute or so. Other apps are added to the system and need a rebuild, which can take several minutes. Pick as many as you like: they go in together, and anything can be removed again.</p>
-        <div id="groups" class="chips" role="group" aria-label="Filter by group"></div>
+        <div id="groups" class="chips" role="group" aria-label="Filter by group"><button type="button" class="filter is-current" data-group="All" aria-pressed="true">All</button></div>
       </section>
 
       <div id="catalog" class="catalog"><p class="muted">Loading the catalog.</p></div>
