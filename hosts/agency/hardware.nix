@@ -35,8 +35,8 @@
   hardware.graphics.enable = true;
 
   # A discrete Nvidia card is left unused: agents' desktops are rendered in
-  # software. Blacklisting nouveau avoids a class of boot problems. See
-  # AGENTS.md for how to enable the card.
+  # software. Blacklisting nouveau avoids a class of boot problems. To use
+  # the card, set hardware.nvidia with PRIME offload and drop this line.
   boot.blacklistedKernelModules = [ "nouveau" ];
 
   zramSwap.enable = true;
