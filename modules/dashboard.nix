@@ -31,7 +31,7 @@ let
     }
     case "''${1:-}" in
       github)
-        gh auth login --hostname github.com --git-protocol https --web && gh auth setup-git ;;
+        gh auth login --hostname github.com --git-protocol https --web && gh auth setup-git && agency-git-identity ;;
       claude)
         need claude "Claude Code" claude-code
         claude ;;

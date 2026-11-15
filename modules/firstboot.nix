@@ -85,6 +85,7 @@ in
           (cd ${home} && xargs -0 -r chown -h ${user}:)
         if [ -e ${notes}/home/.config/gh/hosts.yml ]; then
           runuser -u ${user} -- env HOME=${home} gh auth setup-git || true
+          runuser -u ${user} -- env HOME=${home} /run/current-system/sw/bin/agency-git-identity || true
         fi
         rm -rf ${notes}/home
       fi

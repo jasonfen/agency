@@ -571,6 +571,7 @@ class GitHubLogin:
                           "--with-token", stdin=res["access_token"] + "\n")
             if ok:
                 sh("gh", "auth", "setup-git")
+                sh("agency-git-identity")
             accounts.clear()
             self._set(run_id, state="done" if ok else "failed", code="",
                       error="" if ok else "gh could not save the sign-in.")
