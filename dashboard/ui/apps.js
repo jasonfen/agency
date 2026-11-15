@@ -3,15 +3,16 @@
 //
 // A click never moves the page. The card shows what is happening to its
 // app, and the bar at the bottom of the window (common.js) shows the
-// running change and its log. Clicks while a change runs wait in a queue; when the change
-// finishes, everything queued goes as one change (one rebuild at most).
+// running change and its log. Clicks while a change runs wait in a queue on
+// the server; when the change finishes, the server sends everything queued as
+// one change (one rebuild at most), whether or not this page is still open.
 
 let catalog = null; // { apps: [...], error }
 let job = null; // the server's current job, or null
 let lastFinished = null; // id of the last job we saw finish
 let group = "All";
 let query = "";
-const queue = new Map(); // app id -> "add" | "remove"
+let queue = new Map(); // app id -> "add" | "remove", as the server last said
 
 const running = () => !!(job && job.state === "running");
 const byId = (id) => catalog?.apps.find((a) => a.id === id);
@@ -114,36 +115,21 @@ async function loadCatalog() {
   drawAll();
 }
 
-// Send everything queued as one change. Only when nothing is running.
-let flushing = false;
-async function flushQueue() {
-  if (flushing || running() || !queue.size) return;
-  flushing = true;
-  const sent = new Map(queue);
-  const add = [...sent].filter(([, v]) => v === "add").map(([k]) => k);
-  const remove = [...sent].filter(([, v]) => v === "remove").map(([k]) => k);
+// Put an app in the server's queue (want "add" or "remove"), or take it out
+// (want null). The server starts it at once if nothing is running.
+async function enqueue(id, want) {
+  if (want) queue.set(id, want);
+  else queue.delete(id);
+  drawAll();
   showNotice("");
   let result;
   try {
-    result = await api("/api/apps/change", { add, remove });
+    result = await api("/api/apps/queue", { id, want });
   } catch {
     result = { ok: false, error: "The server did not answer." };
   }
-  const forget = () => {
-    // Only what was sent: clicks made meanwhile stay queued.
-    for (const [id, v] of sent) if (queue.get(id) === v) queue.delete(id);
-  };
-  if (result.ok) {
-    await refresh(); // the cards show the running job before leaving the queue
-    forget();
-  } else if (!result.busy) {
-    // busy: another change started first; the queue goes when it ends.
-    showNotice(result.error || "That did not start.");
-    forget();
-  }
-  flushing = false;
-  drawAll();
-  if (!result.ok) await refresh();
+  if (!result.ok) showNotice(result.error || "That did not start.");
+  return refresh();
 }
 
 let timer = null;
@@ -158,14 +144,18 @@ async function refresh() {
       drawHeader(s);
       document.title = "Apps - agency";
       const wasRunning = running();
+      const lastId = job?.id;
       job = s.job;
-      // A change finished: reload which apps are on, then send the queue.
+      queue = new Map(Object.entries(s.queue || {}));
+      // A change finished: reload which apps are on. The server may have
+      // started the queued one already, so a new job id counts too.
       if (job && !running() && job.id !== lastFinished) {
         lastFinished = job.id;
         if (wasRunning || job.kind === "apps") await loadCatalog();
+      } else if (wasRunning && job?.id !== lastId) {
+        await loadCatalog();
       }
       drawAll();
-      if (!running() && queue.size) return flushQueue();
     }
   } catch {
     // The dashboard restarts during some rebuilds. Try again shortly.
@@ -187,13 +177,10 @@ document.addEventListener("click", async (ev) => {
     const id = t.dataset.app;
     const on = t.dataset.on === "1";
     if (on && !confirm(`Remove ${label(id)}?`)) return;
-    queue.set(id, on ? "remove" : "add");
-    drawAll();
-    return flushQueue();
+    return enqueue(id, on ? "remove" : "add");
   }
   if (t.dataset.undo) {
-    queue.delete(t.dataset.undo);
-    return drawAll();
+    return enqueue(t.dataset.undo, null);
   }
   switch (t.dataset.action) {
     case "job-dismiss":
@@ -208,11 +195,6 @@ document.addEventListener("click", async (ev) => {
 $("#search").addEventListener("input", (ev) => {
   query = ev.target.value;
   drawCatalog();
-});
-
-// Queued changes live only in this page until they are sent.
-addEventListener("beforeunload", (ev) => {
-  if (queue.size) ev.preventDefault();
 });
 
 // Draw the catalog the last visit saw until the server answers, so the

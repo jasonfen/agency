@@ -500,7 +500,7 @@ class Jobs:
                     Path(infile).unlink(missing_ok=True)
                 return {"ok": False, "error": f"Could not start it: {e}"}
             for old in STATE.glob("*"):
-                if old.name.split(".")[0] not in (job_id, "job"):
+                if old.name.split(".")[0] not in (job_id, "job", "queue"):
                     old.unlink(missing_ok=True)
             (STATE / "job.json").write_text(json.dumps(
                 {"id": job_id, "kind": kind, "title": title, "started": time.time(),
@@ -529,6 +529,91 @@ class Jobs:
 
 
 jobs = Jobs()
+
+
+# ------------------------------------------------------------- app queue ---
+# Apps clicked while a job runs wait here, in STATE/queue.json, and go as one
+# job (one rebuild at most) when nothing runs. The server sends them, so they
+# go whether or not a page is still open, and survive a restart.
+
+def start_apps_change(adds, removes):
+    known = {a["id"]: a for a in apps()["apps"]}
+    names = lambda xs: joined([known.get(x, {}).get("label", x) for x in xs])
+    title = "; ".join(([f"Adding {names(adds)}"] if adds else [])
+                      + ([f"{'removing' if adds else 'Removing'} {names(removes)}"] if removes else []))
+    cmd = ["agency", "apps", "change"]
+    for x in adds:
+        cmd += ["--add", x]
+    for x in removes:
+        cmd += ["--remove", x]
+    return jobs.start("apps", title, cmd, extra={"apps": {"add": adds, "remove": removes}})
+
+
+class AppQueue:
+    def __init__(self):
+        self.lock = threading.Lock()
+        self.file = STATE / "queue.json"
+
+    def get(self):
+        """{app id: "add" | "remove"}"""
+        try:
+            q = json.loads(self.file.read_text())
+            return {k: v for k, v in q.items() if v in ("add", "remove")} if isinstance(q, dict) else {}
+        except (OSError, ValueError):
+            return {}
+
+    def _write(self, q):
+        STATE.mkdir(parents=True, exist_ok=True)
+        if q:
+            tmp = self.file.with_suffix(".tmp")
+            tmp.write_text(json.dumps(q))
+            tmp.replace(self.file)
+        else:
+            self.file.unlink(missing_ok=True)
+
+    def set(self, app_id, want):
+        app_id = str(app_id or "")
+        if not APP_ID.match(app_id) or app_id not in {a["id"] for a in apps()["apps"]}:
+            return {"ok": False, "error": "There is no app with that name."}
+        if want not in ("add", "remove", None):
+            return {"ok": False, "error": "Say add or remove."}
+        with self.lock:
+            q = self.get()
+            if want:
+                q[app_id] = want
+            else:
+                q.pop(app_id, None)
+            self._write(q)
+        return self.flush()
+
+    def flush(self):
+        """Send the queue as one job, if there is one and nothing runs."""
+        with self.lock:
+            q = self.get()
+            if not q or jobs.running():
+                return {"ok": True}
+            adds = [k for k, v in q.items() if v == "add"]
+            removes = [k for k, v in q.items() if v == "remove"]
+            result = start_apps_change(adds, removes)
+            if not result.get("busy"):
+                # Started, or failed for good: either way it has left the queue.
+                self._write({})
+            if not result["ok"] and not result.get("busy"):
+                print(f"queued app change did not start: {result.get('error')}", file=sys.stderr)
+            return result if not result.get("busy") else {"ok": True}
+
+    def loop(self):
+        while True:
+            time.sleep(2)
+            if self.file.exists():
+                try:
+                    jobs.after_finish(jobs.status())
+                    self.flush()
+                except Exception as e:  # keep the loop alive
+                    print(f"app queue: {e}", file=sys.stderr)
+
+
+app_queue = AppQueue()
 
 
 # ----------------------------------------------------------------- screen ---
@@ -931,6 +1016,7 @@ class Handler(BaseHTTPRequestHandler):
                 "system": system(),
                 "updates": updates.state,
                 "job": job,
+                "queue": app_queue.get(),
             })
         if path == "/api/apps":
             return self.send_json(apps())
@@ -994,32 +1080,10 @@ class Handler(BaseHTTPRequestHandler):
             if count == 1:
                 return self.send_json({"ok": False, "error": "Desktop :1 always stays."})
             job = ("desktop", f"Removing desktop :{count}", ["agency", "desktop", "remove"])
-        elif path in ("/api/apps/add", "/api/apps/remove", "/api/apps/change"):
-            # /api/apps/change takes {"add": [ids], "remove": [ids]}, so a
-            # batch of changes is one job and at most one rebuild. add and
-            # remove take {"id": id}.
-            if path == "/api/apps/change":
-                adds, removes = data.get("add") or [], data.get("remove") or []
-            elif path.endswith("add"):
-                adds, removes = [data.get("id")], []
-            else:
-                adds, removes = [], [data.get("id")]
-            known = {a["id"]: a for a in apps()["apps"]}
-            if not isinstance(adds, list) or not isinstance(removes, list) or not adds + removes:
-                return self.send_json({"ok": False, "error": "No app was chosen."})
-            ids = [str(x) for x in adds + removes]
-            if any(not APP_ID.match(x) or x not in known for x in ids) or len(set(ids)) != len(ids):
-                return self.send_json({"ok": False, "error": "There is no app with that name."})
-            adds, removes = [str(x) for x in adds], [str(x) for x in removes]
-            names = lambda xs: joined([known[x]["label"] for x in xs])
-            title = "; ".join(([f"Adding {names(adds)}"] if adds else [])
-                              + ([f"{'removing' if adds else 'Removing'} {names(removes)}"] if removes else []))
-            cmd = ["agency", "apps", "change"]
-            for x in adds:
-                cmd += ["--add", x]
-            for x in removes:
-                cmd += ["--remove", x]
-            return self.send_json(jobs.start("apps", title, cmd, extra={"apps": {"add": adds, "remove": removes}}))
+        elif path == "/api/apps/queue":
+            # {"id": id, "want": "add" | "remove" | null}. null takes the app
+            # out of the queue again.
+            return self.send_json(app_queue.set(data.get("id"), data.get("want")))
         elif path == "/api/secrets/set":
             name, value = str(data.get("name", "")), data.get("value")
             if not SECRET_NAME.match(name):
@@ -1207,6 +1271,7 @@ class Handler(BaseHTTPRequestHandler):
 
 if __name__ == "__main__":
     threading.Thread(target=updates.loop, daemon=True).start()
+    threading.Thread(target=app_queue.loop, daemon=True).start()
     host = os.environ.get("AGENCY_DASHBOARD_HOST", "127.0.0.1")
     print(f"agency dashboard on http://{host}:{PORT}", file=sys.stderr, flush=True)
     ThreadingHTTPServer((host, PORT), Handler).serve_forever()
