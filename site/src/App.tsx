@@ -1,4 +1,15 @@
-import { Download } from 'lucide-react'
+import {
+  BatteryCharging,
+  Bot,
+  Download,
+  History,
+  KeyRound,
+  LayoutDashboard,
+  LockKeyholeOpen,
+  MonitorPlay,
+  RefreshCw,
+  type LucideIcon,
+} from 'lucide-react'
 import { useEffect, useState, type ReactNode } from 'react'
 import { CopyButton } from '@/components/copy-button'
 import { Dither, PixelCheck, PixelCursor, PixelStar } from '@/components/pixel'
@@ -30,15 +41,15 @@ const diy = [
   ['Hope a change doesn\'t break it', <code className="font-mono text-[0.9em]">agency rollback</code>],
 ]
 
-const features: [string, ReactNode][] = [
-  ['Agents know the machine', 'Skills for Claude Code, Codex and OpenCode.'],
-  ['Root, with an undo', 'Every change is a commit.'],
-  ['Desktops you can watch', 'Or take over, from a browser.'],
-  ['Encrypted secrets', 'Agents read them as env vars.'],
-  ['Updates itself', 'Weekly, unattended.'],
-  ['Built for the shelf', 'Lid shut, never sleeps, charges to 80%.'],
-  ['TPM disk unlock', 'Back up on its own after a power cut.'],
-  ['A dashboard', 'On your tailnet only.'],
+const features: [LucideIcon, string, ReactNode][] = [
+  [Bot, 'Agents know the machine', 'Skills for Claude Code, Codex and OpenCode.'],
+  [History, 'Root, with an undo', 'Every change is a commit.'],
+  [MonitorPlay, 'Desktops you can watch', 'Or take over, from a browser.'],
+  [KeyRound, 'Encrypted secrets', 'Agents read them as env vars.'],
+  [RefreshCw, 'Updates itself', 'Weekly, unattended.'],
+  [BatteryCharging, 'Built for the shelf', 'Lid shut, never sleeps, charges to 80%.'],
+  [LockKeyholeOpen, 'TPM disk unlock', 'Back up on its own after a power cut.'],
+  [LayoutDashboard, 'A dashboard', 'On your tailnet only.'],
 ]
 
 function Github({ className }: { className?: string }) {
@@ -221,7 +232,7 @@ export default function App() {
         </header>
 
         <main>
-          <section className="relative mx-auto max-w-6xl px-5 pt-12 sm:px-8 sm:pt-16 lg:pt-20">
+          <section className="relative mx-auto flex min-h-[calc(100svh-4.25rem)] max-w-6xl flex-col justify-center px-5 pt-12 pb-20 sm:px-8 sm:pb-24">
             <div className="flex items-start justify-between gap-6">
               <h1 className="min-w-0 font-heading text-[3.4rem] leading-[0.92] font-bold tracking-tight sm:text-[5.5rem] lg:text-[6.75rem]">
                 A computer
@@ -231,7 +242,7 @@ export default function App() {
               <PixelCursor className="mt-1 hidden h-40 shrink-0 text-foreground sm:block lg:mr-10 lg:h-52" />
             </div>
 
-            <div className="mt-8 pb-20 lg:mt-12 lg:pb-28">
+            <div className="mt-8 lg:mt-12">
               <div>
                 <p className="max-w-xl text-xl leading-relaxed">
                   Got an old laptop? Boot it from a USB stick and it becomes a machine your agents run as
@@ -292,10 +303,13 @@ export default function App() {
             </table>
 
             <h2 className="mt-24 font-heading text-4xl leading-[1.02] font-bold sm:text-5xl">Features</h2>
-            <ul className="mt-8 grid gap-x-10 gap-y-8 sm:grid-cols-2 lg:grid-cols-4">
-              {features.map(([title, body]) => (
-                <li key={title} className="border-t-2 border-ink pt-4 dark:border-edge">
-                  <h3 className="font-heading text-2xl leading-tight font-bold">{title}</h3>
+            <ul className="mt-8 grid gap-0.5 border-2 border-ink bg-ink sm:grid-cols-2 lg:grid-cols-4 dark:border-edge dark:bg-edge">
+              {features.map(([Icon, title, body]) => (
+                <li key={title} className="bg-card p-6 text-card-foreground">
+                  <span className="grid size-11 place-items-center bg-primary/15 text-primary">
+                    <Icon className="size-6" strokeLinecap="square" strokeLinejoin="miter" aria-hidden />
+                  </span>
+                  <h3 className="mt-5 font-heading text-xl leading-tight font-bold">{title}</h3>
                   <p className="mt-1.5 text-muted-foreground">{body}</p>
                 </li>
               ))}
