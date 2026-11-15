@@ -752,7 +752,7 @@ code_logins = {
 TYPES = {".html": "text/html; charset=utf-8", ".css": "text/css; charset=utf-8",
          ".js": "text/javascript; charset=utf-8", ".woff2": "font/woff2",
          ".svg": "image/svg+xml"}
-OPEN_FILES = {"/screen": "screen.html", "/screen.css": "screen.css", "/screen.js": "screen.js"}
+OPEN_FILES = {"/favicon.svg": "favicon.svg", "/screen": "screen.html", "/screen.css": "screen.css", "/screen.js": "screen.js"}
 FILES = {
     "/": "index.html",
     "/index.html": "index.html",
