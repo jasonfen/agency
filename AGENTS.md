@@ -115,6 +115,11 @@ this file is linked as `~/.claude/CLAUDE.md`, `~/.codex/AGENTS.md` and
 `~/.config/opencode/AGENTS.md`. Files a person put in those places are left
 alone. Add a skill by adding a folder to `skills/` and rebuilding.
 
+Claude Code starts every session with Remote Control on
+(`remoteControlAtStartup` in `~/.claude/settings.json`), so a person can follow
+and steer it from claude.ai/code or the Claude app. It is set only when
+missing: set it to `false` there, or in `/config`, to turn it off.
+
 ## Layout of the repo
 
 | Path | What it holds |

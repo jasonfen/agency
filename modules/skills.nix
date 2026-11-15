@@ -5,10 +5,14 @@
 #                     computer use, changing the system, secrets
 #   instructions      a few lines every session starts with, pointing at
 #                     /etc/nixos/AGENTS.md
+#   settings          Claude Code starts every session with Remote Control
+#                     on, so a person can follow and steer it from
+#                     claude.ai/code or the Claude app
 #
 # They are linked into the places Claude Code, Codex, OpenCode and other
 # agents look. A file a person put there is never replaced; links agency
-# made are refreshed on every rebuild.
+# made are refreshed on every rebuild. A setting is added only when it is
+# missing, so a person who turns it off keeps it off.
 {
   config,
   pkgs,
@@ -49,6 +53,24 @@ let
     put ${instructions} ${home}/.claude/CLAUDE.md
     put ${instructions} ${home}/.codex/AGENTS.md
     put ${instructions} ${home}/.config/opencode/AGENTS.md
+
+    # default FILE KEY VALUE: set KEY in the JSON file FILE, unless it is set.
+    default() {
+      mkdir -p "$(dirname "$1")"
+      [ -s "$1" ] || echo '{}' >"$1"
+      # Leave alone a file that has the key, or that jq cannot read.
+      case "$(${pkgs.jq}/bin/jq --arg k "$2" 'has($k)' "$1" 2>/dev/null)" in
+        false) ;;
+        *) return 0 ;;
+      esac
+      tmp=$(mktemp "$1.XXXXXX")
+      if ${pkgs.jq}/bin/jq --arg k "$2" --argjson v "$3" '.[$k] = $v' "$1" >"$tmp"; then
+        mv "$tmp" "$1"
+      else
+        rm -f "$tmp"
+      fi
+    }
+    default ${home}/.claude/settings.json remoteControlAtStartup true || true
   '';
 in
 {
