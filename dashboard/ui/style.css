@@ -273,3 +273,7 @@ h2 { font: 700 2rem / 1.1 var(--font-display); }
   html { scroll-behavior: auto; }
   .job.is-running .job-mark { animation: none; }
 }
+
+/* GitHub sign-in: the device code, big enough to read across a room. */
+.device { padding: 0.875rem 1rem 1rem; border-bottom: var(--hairline); display: grid; gap: 0.5rem; }
+.device-code { font-size: 1.75rem; letter-spacing: 0.08em; font-weight: 500; user-select: all; }

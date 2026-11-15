@@ -584,6 +584,20 @@ function setTerminal(id, on) {
 function fillAccount(t, old) {
   const qr = $(`#${t.id}-qr`);
   if (!qr) return;
+  if (t.id === "github") {
+    // A device code: no QR code and no terminal, just the code to enter.
+    $(`#${t.id}-scan`).classList.add("no-qr");
+    qr.hidden = true;
+    $(`#${t.id}-term`).hidden = true;
+    $(`#${t.id}-hint`).innerHTML = t.code
+      ? `On your phone or another computer, open <code>${esc(t.url.replace(/^https:\/\//, ""))}</code> and enter this code.`
+      : "Asking GitHub for a code.";
+    const code = $(`#${t.id}-code`);
+    code.textContent = t.code;
+    code.hidden = !t.code;
+    $(`#${t.id}-paste`).hidden = true;
+    return;
+  }
   if (qr.dataset.url !== t.url) { qr.innerHTML = t.qr; qr.dataset.url = t.url; }
   $(`#${t.id}-scan`).classList.toggle("no-qr", !t.url);
   qr.hidden = !t.url;

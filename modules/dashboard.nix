@@ -139,6 +139,8 @@ in
       AGENCY_UI = "${../dashboard/ui}";
       AGENCY_FONTS = "${../installer/ui/fonts}";
       AGENCY_USER = settings.user;
+      # Where `npm install -g` puts agent CLIs (see modules/agents.nix).
+      NPM_CONFIG_PREFIX = "${config.users.users.${settings.user}.home}/.npm-global";
       AGENCY_DASHBOARD_USERS = lib.concatStringsSep " " (settings.dashboardUsers or [ ]);
     };
     serviceConfig = {

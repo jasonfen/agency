@@ -336,7 +336,12 @@ def cmd_apps(args):
 
     if app["kind"] == "npm":
         verb = "install" if args.action == "add" else "uninstall"
-        run(["npm", verb, "-g", app["npm"]])
+        # Set the prefix here too: outside a login shell (the dashboard, a
+        # service) npm would otherwise try to write into its read-only store.
+        prefix = Path.home() / ".npm-global"
+        env = dict(os.environ, NPM_CONFIG_PREFIX=str(prefix))
+        env["PATH"] = f"{prefix / 'bin'}:{env.get('PATH', '')}"
+        run(["npm", verb, "-g", app["npm"]], env=env)
         say(f"Done: {app['label']}.")
     else:
         rebuild()

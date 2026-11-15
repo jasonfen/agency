@@ -250,6 +250,9 @@ TMUX_CONF = "set -g remain-on-exit on\nset -g status off\nset -g history-limit 5
 
 SIGNIN_TOOLS = {
     "github": {
+        # Signed in with GitHub's device flow directly (see GitHubDevice):
+        # the page shows the code, there is no terminal. The entry below is
+        # only its label.
         "label": "GitHub",
         # --insecure-storage: the installer has no keyring, and the token has
         # to be in a file to be carried over.
@@ -304,9 +307,22 @@ def signed_in_as(tool):
     return None
 
 
+GH_CLIENT_ID = "178c6fc778ccc68e1d6a"  # the GitHub CLI's own OAuth app
+GH_SCOPES = "repo read:org gist workflow"
+
+
+def github_post(url, fields):
+    from urllib.parse import urlencode
+    from urllib.request import Request, urlopen
+    req = Request(url, data=urlencode(fields).encode(), headers={"Accept": "application/json"})
+    with urlopen(req, timeout=20) as r:
+        return json.loads(r.read())
+
+
 class SignIn:
     def __init__(self):
         self.lock = threading.Lock()
+        self.github_run = 0
         self.ttyd = None
         self.states = {tool: self.blank() for tool in SIGNIN_TOOLS}
 
@@ -360,8 +376,14 @@ class SignIn:
             if self.states[tool]["state"] in ("running", "done"):
                 return
             self.states[tool] = {**self.blank(), "state": "running", "started": time.time()}
+            if tool == "github":
+                self.github_run += 1
+                run_id = self.github_run
         SIGNIN_HOME.mkdir(parents=True, exist_ok=True)
         os.chmod(SIGNIN_HOME, 0o700)
+        if tool == "github":
+            threading.Thread(target=self._github, args=(run_id,), daemon=True).start()
+            return
         (WORK / "tmux.conf").write_text(TMUX_CONF)
         self.start_ttyd()
         target = self.target(tool)
@@ -377,7 +399,61 @@ class SignIn:
             return
         threading.Thread(target=self._watch, args=(tool,), daemon=True).start()
 
+    def _github_set(self, run_id, **kw):
+        with self.lock:
+            if run_id != self.github_run:
+                return False
+            self.states["github"].update(kw)
+            return True
+
+    def _github(self, run_id):
+        """GitHub's device flow: show a code, wait, save the token for gh."""
+        try:
+            dev = github_post("https://github.com/login/device/code", {"client_id": GH_CLIENT_ID, "scope": GH_SCOPES})
+        except Exception:
+            self._github_set(run_id, state="failed", error="Could not reach GitHub.")
+            return
+        self._github_set(run_id, url=dev["verification_uri"], code=dev["user_code"])
+        interval = int(dev.get("interval", 5))
+        deadline = time.time() + int(dev.get("expires_in", 900))
+        while time.time() < deadline:
+            time.sleep(interval)
+            if not self._github_set(run_id):
+                return  # cancelled
+            try:
+                res = github_post("https://github.com/login/oauth/access_token", {
+                    "client_id": GH_CLIENT_ID, "device_code": dev["device_code"],
+                    "grant_type": "urn:ietf:params:oauth:grant-type:device_code"})
+            except Exception:
+                continue
+            err = res.get("error")
+            if err == "authorization_pending":
+                continue
+            if err == "slow_down":
+                interval += 5
+                continue
+            if err:
+                self._github_set(run_id, state="failed", code="",
+                                 error="The code ran out. Try again." if err == "expired_token" else "GitHub said no.")
+                return
+            env = {**os.environ, "HOME": str(SIGNIN_HOME)}
+            # --insecure-storage: there is no keyring here, and the token has
+            # to be in a file to be carried over to the new system.
+            p = subprocess.run(["gh", "auth", "login", "--hostname", "github.com", "--git-protocol", "https",
+                                "--insecure-storage", "--with-token"], input=res["access_token"] + "\n",
+                               capture_output=True, text=True, env=env, cwd=SIGNIN_HOME)
+            who = signed_in_as("github") if p.returncode == 0 else None
+            if who is None:
+                self._github_set(run_id, state="failed", code="", error="gh could not save the sign-in.")
+            else:
+                self._github_set(run_id, state="done", code="", url="", who=who)
+            return
+        self._github_set(run_id, state="failed", code="", error="The code ran out. Try again.")
+
     def cancel(self, tool):
+        if tool == "github":
+            with self.lock:
+                self.github_run += 1
         tmux("kill-session", "-t", self.target(tool))
         with self.lock:
             if self.states[tool]["state"] != "done":

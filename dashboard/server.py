@@ -489,6 +489,95 @@ def screen():
     }
 
 
+
+# ------------------------------------------------------------ GitHub ---
+# Sign in with GitHub's device flow, the same one `gh auth login` uses: the
+# page shows a short code, you enter it at github.com/login/device on any
+# device, and the token goes to `gh auth login --with-token`. No terminal.
+
+GH_CLIENT_ID = "178c6fc778ccc68e1d6a"  # the GitHub CLI's own OAuth app
+GH_SCOPES = "repo read:org gist workflow"
+
+
+def github_post(url, fields):
+    from urllib.parse import urlencode
+    from urllib.request import Request, urlopen
+    req = Request(url, data=urlencode(fields).encode(), headers={"Accept": "application/json"})
+    with urlopen(req, timeout=20) as r:
+        return json.loads(r.read())
+
+
+class GitHubLogin:
+    def __init__(self):
+        self.lock = threading.Lock()
+        self.state = {"state": "idle", "code": "", "url": "", "error": ""}
+        self.run_id = 0
+
+    def start(self):
+        with self.lock:
+            if self.state["state"] == "waiting":
+                return self.state
+            self.run_id += 1
+            self.state = {"state": "starting", "code": "", "url": "", "error": ""}
+            run_id = self.run_id
+        threading.Thread(target=self._run, args=(run_id,), daemon=True).start()
+        return self.state
+
+    def cancel(self):
+        with self.lock:
+            self.run_id += 1
+            self.state = {"state": "idle", "code": "", "url": "", "error": ""}
+        return self.state
+
+    def _set(self, run_id, **kw):
+        with self.lock:
+            if run_id == self.run_id:
+                self.state.update(kw)
+            return run_id == self.run_id
+
+    def _run(self, run_id):
+        try:
+            dev = github_post("https://github.com/login/device/code",
+                              {"client_id": GH_CLIENT_ID, "scope": GH_SCOPES})
+        except Exception:
+            self._set(run_id, state="failed", error="Could not reach GitHub.")
+            return
+        self._set(run_id, state="waiting", code=dev["user_code"], url=dev["verification_uri"])
+        interval = int(dev.get("interval", 5))
+        deadline = time.time() + int(dev.get("expires_in", 900))
+        while time.time() < deadline:
+            time.sleep(interval)
+            if not self._set(run_id):
+                return  # cancelled
+            try:
+                res = github_post("https://github.com/login/oauth/access_token", {
+                    "client_id": GH_CLIENT_ID, "device_code": dev["device_code"],
+                    "grant_type": "urn:ietf:params:oauth:grant-type:device_code"})
+            except Exception:
+                continue
+            err = res.get("error")
+            if err == "authorization_pending":
+                continue
+            if err == "slow_down":
+                interval += 5
+                continue
+            if err:
+                self._set(run_id, state="failed",
+                          error="The code ran out. Try again." if err == "expired_token" else "GitHub said no.")
+                return
+            ok, _, _ = sh("gh", "auth", "login", "--hostname", "github.com", "--git-protocol", "https",
+                          "--with-token", stdin=res["access_token"] + "\n")
+            if ok:
+                sh("gh", "auth", "setup-git")
+            accounts.clear()
+            self._set(run_id, state="done" if ok else "failed", code="",
+                      error="" if ok else "gh could not save the sign-in.")
+            return
+        self._set(run_id, state="failed", error="The code ran out. Try again.")
+
+
+github_login = GitHubLogin()
+
 # ------------------------------------------------------------------- HTTP ---
 
 TYPES = {".html": "text/html; charset=utf-8", ".css": "text/css; charset=utf-8",
@@ -608,6 +697,8 @@ class Handler(BaseHTTPRequestHandler):
             })
         if path == "/api/apps":
             return self.send_json(apps())
+        if path == "/api/github":
+            return self.send_json(github_login.state)
         if path == "/api/job":
             job = jobs.status()
             jobs.after_finish(job)
@@ -633,6 +724,10 @@ class Handler(BaseHTTPRequestHandler):
 
         if path == "/api/update/check":
             return self.send_json(updates.check())
+        if path == "/api/github/start":
+            return self.send_json(github_login.start())
+        if path == "/api/github/cancel":
+            return self.send_json(github_login.cancel())
         if path == "/api/job/dismiss":
             jobs.dismiss()
             return self.send_json({"ok": True})

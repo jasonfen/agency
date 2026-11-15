@@ -45,13 +45,17 @@ in
       pkgs.findutils
       pkgs.util-linux
       pkgs.shadow
+      pkgs.nodejs_24
+      pkgs.gh
     ];
     environment.HOME = "/root";
     serviceConfig = {
-      Type = "oneshot";
+      # "exec", not "oneshot": boot does not wait for this to finish. A
+      # oneshot that runs `nixos-rebuild switch` deadlocks, because the
+      # switch waits for multi-user.target, which waits for the oneshot.
+      Type = "exec";
       Restart = "on-failure";
       RestartSec = 60;
-      TimeoutStartSec = "infinity";
     };
     script = ''
       # The prebuilt system on the stick has no name, so this first boot
@@ -66,27 +70,12 @@ in
       }
       use_name
 
-      # The console password from setup. First, so the console works even
-      # when the network does not.
+      # First, what needs no network: the console password and the
+      # sign-ins made in setup.
       if [ -s ${notes}/password-hash ]; then
         usermod -p "$(cat ${notes}/password-hash)" ${settings.user}
         rm -f ${notes}/password-hash
       fi
-
-      until curl -fsS --max-time 10 -o /dev/null https://cache.nixos.org/nix-cache-info; do
-        sleep 5
-      done
-
-      if [ -e ${notes}/rebuild ]; then
-        nixos-rebuild switch --flake path:/etc/nixos#agency
-        rm -f ${notes}/rebuild
-        use_name
-      fi
-
-      if [ -s ${notes}/npm-packages ]; then
-        runuser -l ${settings.user} -c "npm install -g $(tr '\n' ' ' <${notes}/npm-packages)"
-      fi
-      rm -f ${notes}/npm-packages
 
       if [ -d ${notes}/home ]; then
         cp -a ${notes}/home/. ${home}/
@@ -95,12 +84,30 @@ in
         (cd ${notes}/home && find . -print0) |
           (cd ${home} && xargs -0 -r chown -h ${user}:)
         if [ -e ${notes}/home/.config/gh/hosts.yml ]; then
-          runuser -l ${user} -c "gh auth setup-git" || true
+          runuser -u ${user} -- env HOME=${home} gh auth setup-git || true
         fi
         rm -rf ${notes}/home
       fi
 
-      runuser -l ${settings.user} -c "agency setup-repo" || true
+      until curl -fsS --max-time 10 -o /dev/null https://cache.nixos.org/nix-cache-info; do
+        sleep 5
+      done
+
+      if [ -s ${notes}/npm-packages ]; then
+        runuser -u ${user} -- env HOME=${home} NPM_CONFIG_PREFIX=${home}/.npm-global \
+          npm install -g $(tr '\n' ' ' <${notes}/npm-packages)
+      fi
+      rm -f ${notes}/npm-packages
+
+      runuser -l ${user} -c "agency setup-repo" || true
+
+      # Last, so everything above is done even if this is interrupted.
+      if [ -e ${notes}/rebuild ]; then
+        systemctl reset-failed nixos-rebuild-switch-to-configuration.service 2>/dev/null || true
+        nixos-rebuild switch --flake path:/etc/nixos#agency
+        rm -f ${notes}/rebuild
+        use_name
+      fi
 
       rmdir ${notes}
     '';
