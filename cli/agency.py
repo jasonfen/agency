@@ -17,6 +17,7 @@ import subprocess
 import sys
 import tempfile
 import time
+from datetime import datetime
 from pathlib import Path
 
 REPO = Path("/etc/nixos")
@@ -29,6 +30,12 @@ DEFAULT_REPO = "https://github.com/makors/agency"
 SOURCE_REV = Path("/var/lib/agency/source-rev")
 FIRSTBOOT = Path("/var/lib/agency/firstboot")
 RECOVERY_KEY = Path("/root/luks-recovery-key.txt")
+
+# Backups (modules/backup.nix).
+BACKUP_UNIT = "restic-backups-home.service"
+BACKUP_LAST = Path("/var/lib/agency/backup-last")
+BACKUP_PASSWORD = Path("/var/lib/agency/backup-password")
+BACKUP_PASSWORD_SAVED = Path("/var/lib/agency/backup-password-saved")
 
 SECRETS = REPO / "secrets" / "agency.sops.json"
 SOPS_CONFIG = REPO / ".sops.yaml"
@@ -304,6 +311,7 @@ def cmd_status(args):
     battery = battery_status()
     if battery:
         say(f"  battery    {battery}")
+    say(f"  backups    {backup_status()}")
     names = secret_names()
     say(f"  secrets    {', '.join(names) if names else 'none'}")
 
@@ -319,6 +327,11 @@ def cmd_status(args):
     say(f"  updates    weekly nixpkgs update; last: {last}")
     if uncommitted():
         notes.append("/etc/nixos has changes that are not committed.")
+    if backups_on():
+        if output(["systemctl", "is-failed", BACKUP_UNIT]) == "failed":
+            notes.append("The last backup failed: journalctl -u restic-backups-home")
+        if backup_remote() and not BACKUP_PASSWORD_SAVED.exists():
+            notes.append("The backup password is only on this machine. A person should run: agency backup password")
     if output(["systemctl", "is-failed", "agency-auto-update.service"]) == "failed":
         notes.append("The last automatic update failed: journalctl -u agency-auto-update")
     for note in notes:
@@ -563,6 +576,174 @@ def cmd_recovery_key(args):
         say("Deleted.")
     else:
         say("Kept. Run `agency recovery-key` again when it is stored.")
+
+
+# ------------------------------------------------------------- backups ---
+# Hourly restic backups of the home folder (modules/backup.nix). restic runs
+# as root through `restic-home`, the wrapper NixOS makes with the
+# repository, password and keys already set.
+
+
+def backups_on():
+    return output(["systemctl", "show", "-p", "LoadState", "--value", BACKUP_UNIT]) == "loaded"
+
+
+def backup_remote():
+    repo = setting_string("backupRepo")
+    return bool(repo) and not repo.startswith("/")
+
+
+def ago(seconds):
+    for unit, size in (("day", 86400), ("hour", 3600), ("minute", 60)):
+        if seconds >= size:
+            n = int(seconds // size)
+            return f"{n} {unit}{'s' if n != 1 else ''} ago"
+    return "just now"
+
+
+def backup_status():
+    if not backups_on():
+        return "off (backupRepo = null in settings.nix)"
+    where = setting_string("backupRepo") or "this disk"
+    if output(["systemctl", "is-active", BACKUP_UNIT]) in ("active", "activating"):
+        last = "running now"
+    else:
+        try:
+            last = ago(time.time() - int(BACKUP_LAST.read_text()))
+        except (OSError, ValueError):
+            last = "none yet"
+    return f"hourly to {where}; last: {last}"
+
+
+def restic(*args, capture=True, check=True):
+    return run(["sudo", tool("restic-home"), *args], capture=capture, check=check)
+
+
+def snapshots():
+    """Oldest first."""
+    found = json.loads(restic("snapshots", "--json", "--no-lock", "--host", host()).stdout or "[]")
+    for snap in found:
+        # "2026-11-15T10:00:01.123456789-05:00": restic gives nanoseconds,
+        # Python reads at most microseconds.
+        stamp = re.sub(r"(\.\d{6})\d+", r"\1", snap["time"]).replace("Z", "+00:00")
+        when = datetime.fromisoformat(stamp)
+        snap["when"] = when.timestamp()
+        snap["label"] = when.astimezone().strftime("%Y-%m-%d %H:%M")
+    return sorted(found, key=lambda s: s["when"])
+
+
+AGE = re.compile(r"^(\d+)([mhdw])$")
+
+
+def pick_snapshot(spec):
+    """latest, a snapshot ID, or an age like 2h: the newest one at least that old."""
+    found = snapshots()
+    if not found:
+        die("there are no backups yet. Make one with: agency backup now")
+    if spec in (None, "latest"):
+        return found[-1]
+    match = AGE.match(spec)
+    if match:
+        seconds = int(match.group(1)) * {"m": 60, "h": 3600, "d": 86400, "w": 604800}[match.group(2)]
+        cutoff = time.time() - seconds
+        older = [s for s in found if s["when"] <= cutoff]
+        if not older:
+            die(f"no backup is that old. The oldest is from {found[0]['label']}.")
+        return older[-1]
+    matches = [s for s in found if s["id"].startswith(spec)]
+    if len(matches) != 1:
+        die(f"{spec}: not a snapshot ID (see `agency backup`) or an age like 30m, 2h, 3d, 1w")
+    return matches[0]
+
+
+def cmd_backup(args):
+    if not backups_on():
+        die("backups are off. Set backupRepo in settings.nix (see modules/backup.nix) and rebuild.")
+
+    if args.action == "now":
+        say("Backing up the home folder ...")
+        if run(["sudo", "systemctl", "start", BACKUP_UNIT], check=False).returncode != 0:
+            die("the backup failed: journalctl -u restic-backups-home")
+        say("Done.")
+        return
+
+    if args.action == "password":
+        password = run(["sudo", "cat", BACKUP_PASSWORD], check=False, capture=True).stdout.strip()
+        if not password:
+            die("there is no password yet; it is made with the first backup: agency backup now")
+        if not sys.stdin.isatty():
+            die("only a person should see the backup password. Run this yourself over SSH.")
+        say("Backup password. Without it no one can read the backups, so if this machine")
+        say("dies, it is the only way to restore them elsewhere. Store it in your password manager.\n")
+        say(f"  {password}\n")
+        say(f"  repository: {setting_string('backupRepo') or '/var/lib/agency/backup (this disk)'}\n")
+        if ask('Type "saved" once it is stored: ').lower() == "saved":
+            run(["sudo", "touch", BACKUP_PASSWORD_SAVED])
+        return
+
+    if args.action == "restore":
+        return backup_restore(args)
+
+    # list
+    say(backup_status())
+    found = snapshots()
+    if not found:
+        say("No backups yet. Make one with: agency backup now")
+        return
+    say("")
+    for snap in reversed(found):
+        size = snap.get("summary", {}).get("data_added")
+        added = f"   +{size_text(size)}" if size is not None else ""
+        say(f"  {snap['short_id']}  {snap['label']}  {ago(time.time() - snap['when'])}{added}")
+    say("\nBring something back with: agency backup restore PATH [--from 2h]")
+
+
+def backup_restore(args):
+    if not args.path:
+        die("usage: agency backup restore PATH [--from latest|ID|2h] [--to DEST]")
+    path = Path(os.path.abspath(os.path.expanduser(args.path)))
+    home = Path(f"/home/{USER}")
+    if path != home and home not in path.parents:
+        die(f"only the home folder is backed up, and {path} is not in it")
+    snap = pick_snapshot(args.source)
+
+    listing = restic("ls", "--json", "--no-lock", snap["id"], path).stdout.splitlines()
+    node = None
+    for line in listing:
+        try:
+            entry = json.loads(line)
+        except ValueError:
+            continue
+        if entry.get("struct_type", "node") == "node" and entry.get("path") == str(path):
+            node = entry
+    if node is None:
+        die(f"{path} is not in the backup from {snap['label']}")
+
+    if args.to:
+        dest = Path(os.path.abspath(os.path.expanduser(args.to)))
+    elif not path.exists() and not path.is_symlink():
+        dest = path
+    else:
+        dest = path.with_name(f"{path.name}.restored-{snap['label'].replace(' ', '-').replace(':', '')}")
+    if dest.exists() or dest.is_symlink():
+        die(f"{dest} is already there. Move it, or name another place with --to")
+    dest.parent.mkdir(parents=True, exist_ok=True)
+
+    say(f"Restoring {path} from {snap['label']} ({snap['short_id']}) to {dest} ...")
+    if node["type"] == "dir":
+        restic("restore", "--no-lock", f"{snap['id']}:{path}", "--target", dest, capture=False)
+        run(["sudo", "chown", f"{USER}:", dest])
+    else:
+        with open(dest, "wb") as f:
+            result = subprocess.run(
+                ["sudo", tool("restic-home"), "dump", "--no-lock", snap["id"], str(path)], stdout=f
+            )
+        if result.returncode != 0:
+            dest.unlink(missing_ok=True)
+            die("the restore failed")
+        if "mode" in node:
+            os.chmod(dest, node["mode"] & 0o7777)
+    say("Done.")
 
 
 # ------------------------------------------------------------- secrets ---
@@ -998,6 +1179,12 @@ def main():
     p.add_argument("file")
     p.add_argument("--no-home", action="store_true", help="leave the home folder as it is, even if the export has one")
 
+    p = sub.add_parser("backup", help="hourly backups of the home folder: list, now, restore, password")
+    p.add_argument("action", nargs="?", default="list", choices=["list", "now", "restore", "password"])
+    p.add_argument("path", nargs="?", help="with restore: the file or folder to bring back")
+    p.add_argument("--from", dest="source", metavar="WHEN", help="with restore: latest (default), a snapshot ID, or an age like 2h or 3d")
+    p.add_argument("--to", metavar="DEST", help="with restore: where to put it (default: its own place if it is gone, else next to it)")
+
     sub.add_parser("recovery-key", help="show the disk recovery key once, then delete it")
     sub.add_parser("setup-repo", help=argparse.SUPPRESS)
     sub.add_parser("help", help="show this help")
@@ -1021,12 +1208,13 @@ def main():
         "secret": cmd_secret,
         "export": cmd_export,
         "import": cmd_import,
+        "backup": cmd_backup,
         "recovery-key": cmd_recovery_key,
         "setup-repo": cmd_setup_repo,
     }
     handlers[args.command](args)
     if args.command is None:
-        say("\nCommands: update, rebuild, rollback, apps, desktop, secret, export, import, recovery-key. See: agency help")
+        say("\nCommands: update, rebuild, rollback, apps, desktop, secret, backup, export, import, recovery-key. See: agency help")
 
 
 if __name__ == "__main__":

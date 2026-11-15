@@ -43,6 +43,7 @@ Start any agent you picked. It already knows how the machine works.
 agency                             # what the machine is doing
 agency update                      # get the newest agency
 agency secret set OPENAI_API_KEY   # a key your agents can use
+agency backup restore ~/project    # bring back a file or folder from the hourly backups
 agency export --home               # this machine's setup, to import on another
 ```
 

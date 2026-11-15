@@ -16,4 +16,8 @@ so be careful with those.
 
 Much needs no rebuild at all: `bun add -g` (or `npm install -g`), `uv`, `pip --user`,
 `nix shell`, and Docker when it is on. `agency help` lists the rest of the
-command (updates, apps, desktops, secrets).
+command (updates, apps, desktops, secrets, backups).
+
+The home folder is backed up hourly with restic (modules/backup.nix).
+`agency backup restore PATH [--from 2h]` undoes a deletion or a bad edit;
+`sudo restic-home ...` is restic itself for anything else (`ls`, `diff`, `find`).

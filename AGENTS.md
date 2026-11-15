@@ -26,6 +26,10 @@ When you add an app to the catalog, add its logo as `dashboard/ui/logos/<id>.svg
 
 GUI apps run on virtual desktops (`:1`, `:2`…). Start one with `gui chromium`. Humans watch them at the addresses `agency desktop list` prints. See the `agency-desktop` skill.
 
+## Backups
+
+The home folder is backed up every hour (restic). If you delete or break something, `agency backup` lists the backups and `agency backup restore PATH --from 2h` brings a file or folder back. It never overwrites: a path that still exists comes back next to it.
+
 ## Secrets
 
 Never commit secrets. Use `agency secret set NAME`; it appears as `$NAME`. Don't read `/root/luks-recovery-key.txt`.

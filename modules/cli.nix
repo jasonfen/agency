@@ -1,5 +1,5 @@
 # The `agency` command (cli/agency.py): status, updates, apps, desktops,
-# secrets, export and import, and the disk recovery key. Run `agency help` on the machine.
+# secrets, backups, export and import, and the disk recovery key. Run `agency help` on the machine.
 {
   config,
   lib,

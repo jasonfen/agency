@@ -34,6 +34,12 @@
   # on hardware without a charge limit. See modules/battery.nix.
   batteryChargeLimit = 80;
 
+  # Where the hourly backups of the home folder go: a restic repository.
+  # Empty: on this disk, which undoes mistakes but not a dead disk. For that,
+  # use s3:..., b2:..., rest:... or sftp:... and store its keys with
+  # `agency secret set`. null: no backups. See modules/backup.nix.
+  backupRepo = "";
+
   # Tailscale logins, besides this machine's owner, that may use the web dashboard.
   dashboardUsers = [ ];
 
