@@ -741,8 +741,8 @@ def backup_restore(args):
         if result.returncode != 0:
             dest.unlink(missing_ok=True)
             die("the restore failed")
-        if "mode" in node:
-            os.chmod(dest, node["mode"] & 0o7777)
+    if "mode" in node:
+        os.chmod(dest, node["mode"] & 0o7777)
     say("Done.")
 
 
