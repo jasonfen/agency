@@ -136,9 +136,18 @@ py.buildPythonApplication {
 
   dontCheckRuntimeDeps = true;
 
+  # One list element per argument: nixos-unstable passes each element to
+  # makeWrapper as a single word, so "--prefix VAR : value" in one string
+  # fails there.
   makeWrapperArgs = [
-    "--prefix LD_LIBRARY_PATH : ${lib.makeLibraryPath runtimeLibs}:/run/opengl-driver/lib"
-    "--prefix PATH : ${lib.makeBinPath runtimePrograms}"
+    "--prefix"
+    "LD_LIBRARY_PATH"
+    ":"
+    "${lib.makeLibraryPath runtimeLibs}:/run/opengl-driver/lib"
+    "--prefix"
+    "PATH"
+    ":"
+    (lib.makeBinPath runtimePrograms)
   ];
 
   pythonImportsCheck = [ "selkies" ];
