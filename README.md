@@ -48,3 +48,7 @@ agency export --home               # this machine's setup, to import on another
 ```
 
 Or use the dashboard: the laptop's screen shows its address as a QR code. It works over Tailscale only.
+
+## License
+
+MIT. See [LICENSE](LICENSE).
