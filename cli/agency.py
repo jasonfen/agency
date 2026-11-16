@@ -457,7 +457,7 @@ def cmd_channel(args):
     lock_before = (REPO / "flake.lock").read_text()
     try:
         # Lock the input if this checkout has never used it.
-        run(["nix", "flake", "lock", "--flake", f"path:{REPO}"])
+        run(["nix", "flake", "lock", f"path:{REPO}"])
         rebuild("test" if args.test else "switch")
     except SystemExit:
         git("checkout", "--", "settings.nix", "flake.lock", check=False)
