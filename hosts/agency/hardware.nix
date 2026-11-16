@@ -19,11 +19,11 @@
     enable = true;
   };
 
-  # Drivers needed before the disk is unlocked. "vmd" covers Intel machines
-  # whose firmware puts the NVMe drive in RAID mode. The virtio ones are
-  # for virtual machines (Proxmox, QEMU/KVM), whose disks are often
-  # virtio-scsi or virtio-blk: the installer offers those disks, and
-  # without these the installed system cannot find its disk at boot.
+  # Drivers needed before the disk is unlocked. The installer offers any
+  # disk the stick's own (much larger) kernel set can see, so every kind of
+  # disk controller it might pick has to be here too, or the installed
+  # system cannot find its disk at boot. "vmd" covers Intel machines whose
+  # firmware puts the NVMe drive in RAID mode.
   boot.initrd.availableKernelModules = [
     "xhci_pci"
     "ehci_pci"
@@ -34,12 +34,37 @@
     "usbhid"
     "sd_mod"
     "sdhci_pci"
+    "sdhci_acpi" # eMMC on Bay Trail and Cherry Trail laptops
     "thunderbolt"
     "tpm_crb"
     "tpm_tis"
+    # Server RAID and SAS cards, which also show up in rented machines.
+    "megaraid_sas"
+    "mpt3sas"
+    # Virtual machines: Proxmox and QEMU/KVM (virtio), Hyper-V, VMware
+    # (LSI Logic and PVSCSI) and Xen.
     "virtio_pci"
     "virtio_scsi"
     "virtio_blk"
+    "hv_vmbus"
+    "hv_storvsc"
+    "mptspi"
+    "mptsas"
+    "vmw_pvscsi"
+    "xen_blkfront"
+    # Keyboards, for typing the recovery key when the TPM does not unlock
+    # the disk. PS/2 and USB keyboards are covered by NixOS's defaults; these
+    # are Hyper-V's, laptops' I2C keyboards, and Surface keyboards (Laptop 3
+    # and later), which sit behind the Surface's own controller.
+    "hyperv_keyboard"
+    "intel_lpss_pci"
+    "i2c_hid_acpi"
+    "surface_aggregator"
+    "surface_aggregator_registry"
+    "surface_aggregator_hub"
+    "surface_hid_core"
+    "surface_hid"
+    "8250_dw"
   ];
   boot.kernelModules = [
     "kvm-intel"
