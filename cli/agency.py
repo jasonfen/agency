@@ -436,10 +436,20 @@ def cmd_channel(args):
         say(f"This machine follows {current} nixpkgs ({channel_input()} in flake.nix).")
         say("Switch with: agency channel stable|unstable [--test]")
         return
-    if args.channel == current:
-        say(f"Already on {current}.")
-        return
     ensure_repo()
+    if args.channel == current:
+        pending = [p for p in ("settings.nix", "flake.lock")
+                   if git("diff", "--quiet", "--", p, check=False).returncode != 0]
+        if not pending:
+            say(f"Already on {current}.")
+            return
+        # Left uncommitted by `agency channel {current} --test`: keep it.
+        if args.test:
+            say(f"Already trying {current}. Run `agency channel {current}` to keep it.")
+            return
+        rebuild()
+        commit(f"Follow {current} nixpkgs", *pending)
+        return
     if uncommitted():
         die("/etc/nixos has changes that are not committed. Commit them first.")
     if args.channel == "stable":
@@ -463,9 +473,8 @@ def cmd_channel(args):
         git("checkout", "--", "settings.nix", "flake.lock", check=False)
         raise
     if args.test:
-        say(f"Running {args.channel} until the next reboot. settings.nix is changed but not")
-        say("committed: `agency rebuild` keeps it; `git -C /etc/nixos checkout settings.nix flake.lock`")
-        say("then `agency rebuild` undoes it.")
+        say(f"Running {args.channel} until the next reboot. To keep it: agency channel {args.channel}")
+        say(f"To undo now: git -C /etc/nixos checkout settings.nix flake.lock && agency rebuild")
         return
     paths = ["settings.nix"] + (["flake.lock"] if (REPO / "flake.lock").read_text() != lock_before else [])
     commit(f"Follow {args.channel} nixpkgs", *paths)
