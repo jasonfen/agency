@@ -7,6 +7,13 @@
 
   nixpkgs.hostPlatform = "x86_64-linux";
 
+  # Boot: systemd-boot, with every past system kept as a boot menu entry.
+  # If a change breaks the machine, pick an older entry at boot.
+  boot.loader.systemd-boot.enable = true;
+  boot.loader.systemd-boot.configurationLimit = 20;
+  boot.loader.efi.canTouchEfiVariables = true;
+  boot.initrd.systemd.enable = true; # needed for TPM disk unlock
+
   # Drivers needed before the disk is unlocked. "vmd" covers Intel machines
   # whose firmware puts the NVMe drive in RAID mode.
   boot.initrd.availableKernelModules = [

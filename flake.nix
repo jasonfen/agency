@@ -63,7 +63,16 @@
       packages.${system} = {
         iso = self.nixosConfigurations.installer.config.system.build.isoImage;
         system = self.nixosConfigurations.agency.config.system.build.toplevel;
+        # The machine as a VM, to try it (hosts/agency/vm.nix).
+        vm = self.nixosConfigurations.agency.config.system.build.vm;
         default = self.packages.${system}.iso;
+      };
+
+      # nix run github:makors/agency#vm
+      apps.${system}.vm = {
+        type = "app";
+        program = "${self.packages.${system}.vm}/bin/run-agency-vm";
+        meta.description = "Try agency in a virtual machine";
       };
     };
 }

@@ -35,6 +35,14 @@ ssh agent@agency
 
 [docs/install.md](docs/install.md) has the details, including a stick that installs without asking anything.
 
+No spare computer? Try it in a virtual machine, on Linux with Nix:
+
+```sh
+nix run github:makors/agency#vm
+```
+
+That, and running agency on a machine that already has NixOS, is in [docs/existing-nixos.md](docs/existing-nixos.md).
+
 ## Use
 
 Start any agent you picked. It already knows how the machine works.
