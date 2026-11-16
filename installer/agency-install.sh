@@ -13,6 +13,7 @@
 # Options:
 #   --unattended            no questions
 #   --hostname NAME         what to call the machine
+#   --keyboard LAYOUT       its keyboard layout, an XKB name such as "de"
 #   --github-user NAME      whose SSH keys to install
 #   --disk /dev/NAME        which disk to erase
 #   --apps "ID ID ..."      which apps from apps.nix to install
@@ -21,11 +22,15 @@
 #   --password-hash-file F  a crypt(3) hash for the console password
 #                           to carry over to the agent account
 #   --force                 skip the vendor and already-installed checks
+#   --no-tpm                do not bind the disk to the TPM: it then asks for
+#                           the recovery key at every start. For a TPM that
+#                           is there but refuses the enrolment.
 #   --yes                   skip the 30 second countdown
 #   --no-reboot             stop after installing; do not restart
 #
 # Filled in from settings.nix and apps.nix by installer/default.nix:
-#   AGENCY_HOSTNAME AGENCY_USER AGENCY_UNATTENDED AGENCY_DISK AGENCY_VENDOR
+#   AGENCY_HOSTNAME AGENCY_KEYBOARD AGENCY_USER AGENCY_UNATTENDED AGENCY_DISK
+#   AGENCY_VENDOR
 #   AGENCY_GITHUB_USER   may be empty
 #   AGENCY_SSH_KEYS      file with extra public keys
 #   AGENCY_APPS          file, one app per line, tab-separated:
@@ -40,6 +45,7 @@ force=0
 disk=$AGENCY_DISK
 gh_user=$AGENCY_GITHUB_USER
 host=$AGENCY_HOSTNAME
+keyboard=$AGENCY_KEYBOARD
 apps_arg=""
 apps_given=0
 ts_state=""
@@ -47,11 +53,13 @@ signin_home=""
 password_hash=""
 countdown=1
 reboot=1
+use_tpm=1
 args=("$@")
 while [ $# -gt 0 ]; do
   case "$1" in
     --unattended) unattended=1 ;;
     --force) force=1 ;;
+    --no-tpm) use_tpm=0 ;;
     --disk)
       disk=${2:-}
       shift
@@ -62,6 +70,10 @@ while [ $# -gt 0 ]; do
       ;;
     --hostname)
       host=${2:-}
+      shift
+      ;;
+    --keyboard)
+      keyboard=${2:-}
       shift
       ;;
     --apps)
@@ -84,7 +96,7 @@ while [ $# -gt 0 ]; do
     --yes) countdown=0 ;;
     --no-reboot) reboot=0 ;;
     *)
-      echo "usage: agency-install [--unattended] [--github-user NAME] [--disk /dev/NAME] [--apps \"ID ...\"] [--force]"
+      echo "usage: agency-install [--unattended] [--github-user NAME] [--disk /dev/NAME] [--apps \"ID ...\"] [--force] [--no-tpm]"
       exit 2
       ;;
   esac
@@ -156,8 +168,9 @@ screen() {
   printf -- '----------------------------------------\n\n'
 }
 
-# Run a long command. The wizard shows a spinner and prints the command's
-# output only if it fails; unattended mode lets the output scroll.
+# Run a long command. The wizard shows a spinner, keeps the command's
+# output in the log and shows its end only if it fails; unattended mode
+# lets the output scroll (and copies all of it to the log, below).
 run() {
   local title=$1
   shift
@@ -165,11 +178,27 @@ run() {
     say "$title"
     "$@"
   else
-    gum spin --spinner line --show-error --title "$title" -- "$@"
+    printf '\n[agency] %s\n' "$title" >>"$log"
+    # shellcheck disable=SC2016 # expanded by the inner bash
+    if ! gum spin --spinner line --title "$title" -- bash -c '"$@" >>"$0" 2>&1' "$log" "$@"; then
+      tail -n 30 "$log"
+      return 1
+    fi
   fi
 }
 
 mkdir -p "$work"
+# Everything an unattended run prints, which is also what the setup screen
+# shows, goes to the log as well, so a failed install can be read in full.
+printf '\n=== agency-install, %s\n' "$(date -u '+%Y-%m-%d %H:%M:%S UTC')" >>"$log"
+if [ "$unattended" = 1 ]; then
+  exec > >(tee -a "$log") 2>&1
+fi
+
+# Where firmware settings are changed: the BIOS, or for a virtual machine
+# the hypervisor's settings for it.
+firmware="the BIOS"
+if systemd-detect-virt --vm --quiet; then firmware="the VM's settings"; fi
 
 # Anonymous counts of how far installs get (see installer/count.sh). The
 # setup screen says so itself; otherwise this is the text wizard or an
@@ -193,10 +222,23 @@ trap cleanup EXIT
 # --------------------------------------------------- checks, no questions ---
 
 [ "$(id -u)" = 0 ] || stop "The installer must run as root: sudo agency-install"
-[ -d /sys/firmware/efi ] ||
-  stop "This machine booted in legacy mode. Turn off legacy/CSM boot in the BIOS so it boots in UEFI mode."
-[ "$(cat /sys/class/tpm/tpm0/tpm_version_major 2>/dev/null || true)" = 2 ] ||
-  stop "No TPM 2.0 chip was found. Turn it on in the BIOS; it is often called 'Security Device Support', 'Intel PTT' or 'AMD fTPM'."
+if [ ! -d /sys/firmware/efi ]; then
+  if [ "$firmware" = "the BIOS" ]; then
+    stop "This machine booted in legacy mode. Turn off legacy/CSM boot in the BIOS so it boots in UEFI mode."
+  fi
+  stop "This VM booted with BIOS firmware (SeaBIOS). In the VM's settings, choose UEFI (OVMF) firmware, with Secure Boot off."
+fi
+tpm_version=$(cat /sys/class/tpm/tpm0/tpm_version_major 2>/dev/null || true)
+case "$tpm_version" in
+  2) ;;
+  1) stop "TPM 1.2 found; agency needs TPM 2.0. Some machines can switch their TPM to 2.0 in $firmware; most older ones cannot." ;;
+  *)
+    if [ "$firmware" = "the BIOS" ]; then
+      stop "No TPM 2.0 chip was found. Turn it on in the BIOS; it is often called 'Security Device Support', 'Intel PTT' or 'AMD fTPM'."
+    fi
+    stop "No TPM 2.0 was found. In the VM's settings, add a TPM 2.0 device (a vTPM)."
+    ;;
+esac
 
 if [ "$unattended" = 0 ]; then
   screen "welcome"
@@ -282,6 +324,8 @@ valid_user() { [[ "$1" =~ ^[A-Za-z0-9-]{1,39}$ ]]; }
 valid_host() { [[ "$1" =~ ^[a-z0-9]([a-z0-9-]{0,30}[a-z0-9])?$ ]]; }
 host=${host:-agency}
 
+[[ "$keyboard" =~ ^[a-z]{2,8}$ ]] || stop "'$keyboard' is not a keyboard layout. Use an XKB name such as us, de or fr."
+
 if [ "$unattended" = 1 ]; then
   valid_host "$host" || stop "'$host' is not a valid machine name. Use lowercase letters, numbers and hyphens."
   if [ -n "$gh_user" ]; then
@@ -337,25 +381,48 @@ fi
 
 # ----------------------------------------------------------------- disk ---
 
-# The USB stick we booted from must never be the target.
+# The USB stick we booted from must never be the target. Its ISO is
+# usually a partition, but a VM may attach the ISO as a whole disk.
 boot_disk=""
 boot_part=$(findmnt -no SOURCE /iso 2>/dev/null || true)
 if [ -n "$boot_part" ]; then
   boot_disk=$(lsblk -no PKNAME "$boot_part" 2>/dev/null | head -n1 || true)
+  if [ -z "$boot_disk" ] && [ "$(lsblk -dno TYPE "$boot_part" 2>/dev/null || true)" = disk ]; then
+    boot_disk=$(lsblk -dno NAME "$boot_part")
+  fi
 fi
 
-# Internal disks, best first: NVMe before SATA and anything else.
-# Removable disks, USB disks and the boot stick are never candidates.
-ranked_disks() {
-  lsblk -dnbo NAME,SIZE,TYPE,RM,TRAN |
+# The system needs about 7 GB, and rebuilding it on the first start more.
+min_size=20000000000
+min_label="20 GB"
+
+# Internal disks, best first: NVMe before SATA and anything else, each line
+# "RANK SIZE /dev/NAME". Removable, read-only and USB disks, the boot stick,
+# and the small boot and RPMB areas of an eMMC chip are never candidates.
+candidate_disks() {
+  lsblk -dnbo NAME,SIZE,TYPE,RM,RO,TRAN |
     awk -v skip="$boot_disk" \
-      '$3 == "disk" && $4 == 0 && $5 != "usb" && $1 != skip && $1 !~ /^(zram|loop|ram)/ { print ($5 == "nvme" ? 0 : 1), "/dev/" $1 }' |
-    sort -n
+      '$3 == "disk" && $4 == 0 && $5 == 0 && $6 != "usb" && $1 != skip &&
+       $1 !~ /^(zram|loop|ram)/ && $1 !~ /^mmcblk[0-9]+(boot[0-9]+|rpmb)$/ {
+         print ($6 == "nvme" ? 0 : 1), $2, "/dev/" $1 }' |
+    sort -n -k1,1
 }
 
 describe() { lsblk -dno NAME,SIZE,MODEL "$1" | tr -s ' '; }
 
-mapfile -t ranked < <(ranked_disks)
+# "RANK /dev/NAME" for each disk big enough; the paths of those too small.
+ranked=()
+too_small=()
+while read -r rank size path; do
+  if [ "$size" -ge "$min_size" ]; then ranked+=("$rank $path"); else too_small+=("$path"); fi
+done < <(candidate_disks)
+
+no_disk() {
+  if [ "${#too_small[@]}" -gt 0 ]; then
+    stop "The only internal disk here, $(describe "${too_small[0]}"), is smaller than $min_label. agency needs a disk of $min_label or more."
+  fi
+  stop "No internal disk was found. If $firmware has the SATA or storage mode set to RAID or Intel RST, switch it to AHCI, then start from the USB stick again."
+}
 
 if [ -z "$disk" ]; then
   if [ "$unattended" = 1 ]; then
@@ -372,8 +439,9 @@ if [ -z "$disk" ]; then
       stop "choose one. Either run: sudo agency-install --unattended --disk /dev/NAME   or set 'disk' in settings.nix and rebuild the stick."
     fi
     disk=${candidates[0]:-}
+    [ -n "$disk" ] || no_disk
   else
-    [ "${#ranked[@]}" -gt 0 ] || stop "No internal disk was found."
+    [ "${#ranked[@]}" -gt 0 ] || no_disk
     options=()
     for line in "${ranked[@]}"; do
       options+=("$(describe "${line#* }")|${line#* }")
@@ -389,6 +457,8 @@ if [ -z "$disk" ] || [ ! -b "$disk" ]; then
 fi
 disk=$(readlink -f "$disk")
 [ "$disk" != "/dev/$boot_disk" ] || stop "The target disk $disk is the USB stick itself."
+[ "$(lsblk -dnbo SIZE "$disk")" -ge "$min_size" ] ||
+  stop "The disk $(describe "$disk") is smaller than $min_label. agency needs a disk of $min_label or more."
 
 # Is there an earlier install, and on which disk?
 old_disk=""
@@ -545,6 +615,12 @@ installing=started
 step=partition
 count install_started
 
+# An install that failed earlier in this boot leaves its disk mounted and
+# unlocked. Release it first, or clearing and partitioning stop at "device
+# or resource busy".
+if mountpoint -q /mnt; then umount -R /mnt || true; fi
+if [ -e /dev/mapper/cryptroot ]; then cryptsetup close cryptroot || true; fi
+
 if [ -n "$clear_old" ]; then
   say "Clearing the earlier install on $clear_old ..."
   lsblk -lnpo NAME "$clear_old" | tail -n +2 | while read -r part; do wipefs -a "$part"; done
@@ -567,12 +643,31 @@ run "Copying the system to disk (several minutes)" \
 step=encrypt
 say "Setting up disk encryption ..."
 install -d -m 700 /mnt/root
-if ! {
-  systemd-cryptenroll --unlock-key-file="$luks_key" --tpm2-device=auto --tpm2-pcrs=7 "$luks_part" &&
-    systemd-cryptenroll --unlock-key-file="$luks_key" --recovery-key --wipe-slot=password "$luks_part" \
-      >/mnt/root/luks-recovery-key.txt
-} 2>"$log"; then
-  cat "$log"
+enroll_err=$work/cryptenroll.err
+enroll_tpm() {
+  systemd-cryptenroll --unlock-key-file="$luks_key" --tpm2-device=auto --tpm2-pcrs=7 "$luks_part"
+}
+if [ "$use_tpm" = 1 ] && ! enroll_tpm 2>"$enroll_err"; then
+  cat "$enroll_err"
+  if [ "$unattended" = 0 ]; then cat "$enroll_err" >>"$log"; fi
+  # A TPM that is there but refuses (locked out, or a buggy firmware TPM)
+  # refuses again on every retry. Without it, the disk is still encrypted,
+  # but opens only with the recovery key.
+  say "TPM enrolment failed: the TPM is there but did not accept the disk key."
+  if [ "$unattended" = 1 ]; then
+    say "STOPPED: The TPM did not accept the disk key. Clearing the TPM in $firmware may help. Or install without it: the disk then asks for the recovery key at every start (sudo agency-install --no-tpm)."
+    exit 1
+  fi
+  note "Clearing the TPM in $firmware may help. Or continue without it: the disk is still encrypted, but asks for the recovery key at every start."
+  if ! gum confirm --no-show-help --default=false --affirmative "Continue with the recovery key only" --negative "Stop" "Continue without the TPM?"; then
+    exit 1
+  fi
+  use_tpm=0
+fi
+if ! systemd-cryptenroll --unlock-key-file="$luks_key" --recovery-key --wipe-slot=password "$luks_part" \
+  >/mnt/root/luks-recovery-key.txt 2>"$enroll_err"; then
+  cat "$enroll_err"
+  if [ "$unattended" = 0 ]; then cat "$enroll_err" >>"$log"; fi
   say "Disk encryption setup failed. The disk has been erased; start again to retry."
   pause "Press Enter."
   exit 1
@@ -592,6 +687,7 @@ for id in "${chosen[@]}"; do apps_nix+="\"$id\" "; done
 sed -i -E \
   -e "s|^  hostName = .*|  hostName = \"$host\";|" \
   -e "s|^  githubUser = .*|  githubUser = \"$gh_user\";|" \
+  -e "s|^  keyboard = .*|  keyboard = \"$keyboard\";|" \
   -e "s|^  apps = .*|  apps = [ $apps_nix];|" \
   /mnt/etc/nixos/settings.nix
 
@@ -599,7 +695,9 @@ sed -i -E \
 notes=/mnt/var/lib/agency/firstboot
 install -d -m 755 /mnt/var/lib/agency
 install -d -m 700 "$notes"
-if [ "$system_list" != "$AGENCY_BAKED_SYSTEM" ]; then touch "$notes/rebuild"; fi
+if [ "$system_list" != "$AGENCY_BAKED_SYSTEM" ] || [ "$keyboard" != "$AGENCY_KEYBOARD" ]; then
+  touch "$notes/rebuild"
+fi
 
 # The machine's name. A prebuilt system with no name of its own reads it
 # from /etc/hostname; one with a different name baked in has to rebuild.

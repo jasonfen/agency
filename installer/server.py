@@ -25,6 +25,8 @@ from pathlib import Path
 PORT = 7373
 UI = Path(os.environ["AGENCY_UI"])
 HOSTNAME = os.environ.get("AGENCY_HOSTNAME") or "agency"
+KEYBOARD_FILE = Path(os.environ.get("AGENCY_KEYBOARD_FILE", "/run/agency-keyboard"))
+KIOSK_RESTART = Path(os.environ.get("AGENCY_KIOSK_RESTART", "/run/agency-kiosk-restart"))
 USER = os.environ.get("AGENCY_USER", "agent")
 GITHUB_USER = os.environ.get("AGENCY_GITHUB_USER", "")
 APPS_TABLE = Path(os.environ["AGENCY_APPS"])
@@ -35,6 +37,53 @@ WORK = Path(os.environ.get("AGENCY_WORK", "/tmp/agency-setup"))
 SYS = Path(os.environ.get("AGENCY_SYS", "/sys"))
 DEV = Path(os.environ.get("AGENCY_DEV", "/dev"))
 MNT = Path(os.environ.get("AGENCY_MNT", "/mnt"))
+
+# Keyboard layouts offered on the welcome screen: XKB names, which the
+# installed system also uses for its console (console.useXkbConfig). All of
+# them type Latin letters, which names and passwords here need.
+KEYBOARDS = [
+    ("us", "English (US)"), ("gb", "English (UK)"), ("de", "German"), ("fr", "French"),
+    ("es", "Spanish"), ("latam", "Spanish (Latin America)"), ("it", "Italian"), ("pt", "Portuguese"),
+    ("br", "Portuguese (Brazil)"), ("ch", "Swiss German"), ("be", "Belgian"), ("nl", "Dutch"),
+    ("se", "Swedish"), ("no", "Norwegian"), ("dk", "Danish"), ("fi", "Finnish"), ("pl", "Polish"),
+    ("cz", "Czech"), ("hu", "Hungarian"), ("tr", "Turkish"), ("ca", "French (Canada)"), ("jp", "Japanese"),
+]
+
+
+def keyboard():
+    """The layout in use: the one chosen on screen, else the stick's own."""
+    try:
+        found = re.search(r"^XKB_DEFAULT_LAYOUT=([a-z]+)$", KEYBOARD_FILE.read_text(), re.M)
+        if found:
+            return found.group(1)
+    except OSError:
+        pass
+    return os.environ.get("AGENCY_KEYBOARD") or "us"
+
+
+def set_keyboard(layout):
+    """Switch the screen to another layout. cage reads it only when it
+    starts, so this restarts the kiosk; the page loads again from the top."""
+    if layout not in dict(KEYBOARDS):
+        return {"ok": False}
+    if layout == keyboard():
+        return {"ok": True}
+    KEYBOARD_FILE.write_text(f"XKB_DEFAULT_LAYOUT={layout}\n")
+
+    def restart():
+        KIOSK_RESTART.touch()
+        try:
+            sh("systemctl", "restart", "cage-tty1.service", timeout=60)
+            time.sleep(5)
+        finally:
+            KIOSK_RESTART.unlink(missing_ok=True)
+
+    threading.Thread(target=restart, daemon=True).start()
+    return {"ok": True}
+
+
+# The system needs about 7 GB, and rebuilding it on the first start more.
+MIN_DISK = 20_000_000_000
 
 KEY_LINE = re.compile(r"^(ssh-|ecdsa-|sk-)", re.M)
 USERNAME = re.compile(r"^[A-Za-z0-9-]{1,39}$")
@@ -68,6 +117,7 @@ def human(size):
 
 def info():
     tpm = SYS / "class/tpm/tpm0/tpm_version_major"
+    tpm_version = tpm.read_text().strip() if tpm.exists() else ""
     apps = []
     for line in APPS_TABLE.read_text().splitlines():
         app_id, on, kind, _npm, label = line.split("\t")
@@ -76,8 +126,14 @@ def info():
         "hostname": HOSTNAME,
         "user": USER,
         "githubUser": GITHUB_USER,
+        "keyboard": keyboard(),
+        "keyboards": [{"id": k, "label": label} for k, label in KEYBOARDS],
         "uefi": (SYS / "firmware/efi").is_dir(),
-        "tpm": tpm.exists() and tpm.read_text().strip() == "2",
+        "tpm": tpm_version == "2",
+        "tpmVersion": tpm_version,
+        # In a virtual machine, firmware settings are in the hypervisor's
+        # settings for the VM, not in a BIOS.
+        "vm": sh("systemd-detect-virt", "--vm", "--quiet")[0],
         "apps": apps,
     }
 
@@ -132,19 +188,28 @@ def wifi_list():
             continue
         ssid, signal, security = parts[0], int(parts[1] or 0), parts[2]
         if ssid not in best or signal > best[ssid]["signal"]:
-            best[ssid] = {"ssid": ssid, "signal": signal, "secure": security not in ("", "--")}
+            best[ssid] = {"ssid": ssid, "signal": signal, "secure": security not in ("", "--"),
+                          # WPA-Enterprise needs more than a password; the
+                          # screen says how to join it from the console.
+                          "enterprise": "802.1X" in security}
     return sorted(best.values(), key=lambda n: -n["signal"])
 
 
-def wifi_connect(ssid, password):
+def wifi_connect(ssid, password, hidden=False):
     cmd = ["nmcli", "device", "wifi", "connect", ssid]
     if password:
         cmd += ["password", password]
+    if hidden:
+        cmd += ["hidden", "yes"]
     ok, _, err = sh(*cmd, timeout=60)
     if ok:
         return {"ok": True}
     wrong = "secrets were required" in err.lower() or "802-11-wireless-security" in err
-    return {"ok": False, "error": "That password was not accepted." if wrong else "Could not join that network."}
+    if wrong:
+        return {"ok": False, "error": "That password was not accepted."}
+    if hidden and "no network with ssid" in err.lower():
+        return {"ok": False, "error": f"No network named {ssid} was found. Names are case-sensitive."}
+    return {"ok": False, "error": "Could not join that network."}
 
 
 def ssh_keys(user):
@@ -159,29 +224,41 @@ def ssh_keys(user):
     return {"ok": True, "count": count}
 
 
-def parent_disk(part):
+def parent_disk(part, whole=False):
+    """The disk a partition is on. With whole=True, a whole disk is its own
+    answer: a VM can attach the installer ISO as a disk with no partition."""
     ok, out, _ = sh("lsblk", "-no", "PKNAME", str(part))
     name = out.split("\n")[0].strip() if ok else ""
+    if not name and whole:
+        ok, out, _ = sh("lsblk", "-dno", "NAME,TYPE", str(part))
+        fields = out.split() if ok else []
+        if len(fields) == 2 and fields[1] == "disk":
+            name = fields[0]
     return f"/dev/{name}" if name else ""
 
 
 def disks():
-    """Internal disks, NVMe first. Never removable, USB, or the boot stick."""
+    """Internal disks, NVMe first. Never removable, read-only, USB, the boot
+    stick, or the small boot and RPMB areas of an eMMC chip. Disks too small
+    for the system are listed, marked, so the screen can say why."""
     ok, src, _ = sh("findmnt", "-no", "SOURCE", "/iso")
-    boot = parent_disk(src.strip()) if ok and src.strip() else ""
-    ok, out, _ = sh("lsblk", "-J", "-b", "-d", "-o", "NAME,SIZE,TYPE,RM,TRAN,MODEL")
+    boot = parent_disk(src.strip(), whole=True) if ok and src.strip() else ""
+    ok, out, _ = sh("lsblk", "-J", "-b", "-d", "-o", "NAME,SIZE,TYPE,RM,RO,TRAN,MODEL")
     found = []
     for d in json.loads(out).get("blockdevices", []) if ok else []:
         name, path = d["name"], f"/dev/{d['name']}"
         removable = d.get("rm") in (True, "1", 1)
-        if d.get("type") != "disk" or removable or d.get("tran") == "usb" or path == boot:
+        readonly = d.get("ro") in (True, "1", 1)
+        if d.get("type") != "disk" or removable or readonly or d.get("tran") == "usb" or path == boot:
             continue
-        if re.match(r"^(zram|loop|ram)", name):
+        if re.match(r"^(zram|loop|ram)", name) or re.match(r"^mmcblk\d+(boot\d+|rpmb)$", name):
             continue
+        size = int(d.get("size") or 0)
         found.append({
             "path": path,
             "name": name,
-            "size": human(d.get("size") or 0),
+            "size": human(size),
+            "small": size < MIN_DISK,
             "model": (d.get("model") or "Unknown disk").strip(),
             "kind": "NVMe" if d.get("tran") == "nvme" else (d.get("tran") or "disk").upper(),
         })
@@ -199,7 +276,7 @@ class Tailscale:
     def __init__(self):
         self.lock = threading.Lock()
         self.dir = WORK / "tailscale"
-        self.state = {"state": "idle", "url": "", "qr": "", "error": ""}
+        self.state = {"state": "idle", "url": "", "qr": "", "error": "", "name": ""}
         self.procs = []
 
     def state_file(self):
@@ -210,7 +287,7 @@ class Tailscale:
         with self.lock:
             if self.state["state"] in ("starting", "waiting", "connected"):
                 return
-            self.state = {"state": "starting", "url": "", "qr": "", "error": ""}
+            self.state = {"state": "starting", "url": "", "qr": "", "error": "", "name": name}
         threading.Thread(target=self._run, args=(name,), daemon=True).start()
 
     def cancel(self):
@@ -218,7 +295,7 @@ class Tailscale:
             p.terminate()
         with self.lock:
             if self.state["state"] != "connected":
-                self.state = {"state": "idle", "url": "", "qr": "", "error": ""}
+                self.state = {"state": "idle", "url": "", "qr": "", "error": "", "name": ""}
 
     def _run(self, name):
         self.dir.mkdir(parents=True, exist_ok=True)
@@ -547,7 +624,8 @@ class Install:
 
     def reset(self):
         self.state = {"state": "idle", "phase": -1, "copied": 0.0, "error": "", "log": [],
-                      "recoveryKey": "", "recoveryQr": ""}
+                      "recoveryKey": "", "recoveryQr": "", "tpmFailed": False, "noTpm": False,
+                      "logFile": str(WORK / "install.log")}
         self.copied = 0
 
     def _count_paths(self):
@@ -555,14 +633,16 @@ class Install:
             ok, out, _ = sh("nix-store", "-qR", SYSTEM, timeout=120)
             self.total_paths = len(out.split()) if ok else 0
 
-    def start(self, name, disk, user, apps, tailscale_state, signin_home, password_hash=""):
+    def start(self, name, disk, user, apps, tailscale_state, signin_home, password_hash="", no_tpm=False):
         with self.lock:
             if self.state["state"] == "running":
                 return
             self.reset()
-            self.state["state"] = "running"
+            self.state.update(state="running", noTpm=no_tpm)
         cmd = [INSTALLER, "--unattended", "--force", "--yes", "--no-reboot",
-               "--hostname", name, "--github-user", user, "--disk", disk, "--apps", " ".join(apps)]
+               "--hostname", name, "--keyboard", keyboard(), "--github-user", user, "--disk", disk, "--apps", " ".join(apps)]
+        if no_tpm:
+            cmd += ["--no-tpm"]
         if tailscale_state:
             cmd += ["--tailscale-state", tailscale_state]
         if signin_home:
@@ -588,8 +668,14 @@ class Install:
                     if self.total_paths:
                         self.state["copied"] = min(self.copied / self.total_paths, 1.0)
                     continue
-                if line:
+                # The screen shows the end of this when the install stops.
+                # Shell traces ("+ cmd", from the disk scripts) bury the
+                # actual error, so they are left out here; the log file
+                # (written by agency-install) has everything.
+                if line and not line.startswith("+"):
                     self.state["log"] = (self.state["log"] + [line])[-200:]
+                if line.startswith("[agency] TPM enrolment failed"):
+                    self.state["tpmFailed"] = True
                 if line.startswith("[agency] STOPPED: "):
                     stopped = line[len("[agency] STOPPED: "):]
                 for i, (_title, marker) in enumerate(PHASES):
@@ -678,7 +764,10 @@ class Handler(BaseHTTPRequestHandler):
     def do_POST(self):
         path, data = self.path, self.body()
         if path == "/api/wifi":
-            return self.send_json(wifi_connect(data.get("ssid", ""), data.get("password", "")))
+            return self.send_json(wifi_connect(str(data.get("ssid", "")), str(data.get("password", "")),
+                                               bool(data.get("hidden"))))
+        if path == "/api/keyboard":
+            return self.send_json(set_keyboard(str(data.get("layout", ""))))
         if path == "/api/keys":
             return self.send_json(ssh_keys(data.get("user", "")))
         if path == "/api/name":
@@ -705,15 +794,19 @@ class Handler(BaseHTTPRequestHandler):
         if path == "/api/install":
             known = {a["id"] for a in info()["apps"]}
             apps = [a for a in data.get("apps", []) if a in known]
-            valid_disks = {d["path"] for d in disks()["disks"]}
+            valid_disks = {d["path"] for d in disks()["disks"] if not d["small"]}
             if (data.get("disk") not in valid_disks or not USERNAME.match(data.get("user", ""))
                     or not MACHINE_NAME.match(data.get("name", ""))):
+                return self.send_json({"error": "bad request"}, 400)
+            # The tailnet knows the machine by the name it signed in with;
+            # the screen locks the name once Tailscale is connected.
+            if tailscale.state_file() and data["name"] != tailscale.state["name"]:
                 return self.send_json({"error": "bad request"}, 400)
             password = str(data.get("password", ""))
             if len(password) < 8:
                 return self.send_json({"error": "bad request"}, 400)
             install.start(data["name"], data["disk"], data["user"], apps, tailscale.state_file(), signin.home(),
-                          password_hash_file(password))
+                          password_hash_file(password), no_tpm=bool(data.get("noTpm")))
             return self.send_json({"ok": True})
         if path == "/api/restart":
             subprocess.Popen(["systemctl", "reboot"])

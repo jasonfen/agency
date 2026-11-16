@@ -60,6 +60,7 @@ let
     pkgs.bashInteractive
     pkgs.coreutils
     pkgs.util-linux
+    pkgs.cryptsetup # closes the disk of an earlier, failed attempt
     pkgs.curl
     pkgs.gnugrep
     pkgs.gnused
@@ -87,6 +88,7 @@ let
     runtimeInputs = tools;
     text = ''
       export AGENCY_HOSTNAME=${lib.escapeShellArg settings.hostName}
+      export AGENCY_KEYBOARD=${lib.escapeShellArg keyboard}
       export AGENCY_USER=${lib.escapeShellArg settings.user}
       export AGENCY_UNATTENDED=${if settings.unattended then "1" else "0"}
       export AGENCY_DISK=${lib.escapeShellArg settings.disk}
@@ -105,6 +107,15 @@ let
   };
 
   port = "7373";
+
+  # The keyboard layout the stick starts with. The setup screen can switch
+  # it: it writes the layout to this file and restarts the kiosk, because
+  # cage reads XKB_DEFAULT_LAYOUT only when it starts.
+  keyboard = settings.keyboard or "us";
+  keyboardFile = "/run/agency-keyboard";
+  # While the kiosk restarts for a new layout, this file stops the text
+  # wizard from taking over the screen as if the kiosk had stopped.
+  kioskRestart = "/run/agency-kiosk-restart";
 
   # The kiosk's one program: wait for the server, then show the page.
   kiosk = pkgs.writeShellScript "agency-kiosk" ''
@@ -165,9 +176,15 @@ in
         "loglevel=3"
       ];
 
-      # Skip the boot menu (installer, recovery, memory test ...) and start
-      # the installer straight away.
-      boot.loader.timeout = lib.mkForce 0;
+      # Show the boot menu for a moment, then start the installer. On a
+      # machine whose graphics hang at boot (some Nvidia and hybrid laptops),
+      # the second entry starts it without the graphics drivers: the screen
+      # then runs on the firmware's framebuffer, which is slower but works.
+      boot.loader.timeout = lib.mkForce 3;
+      specialisation.safe-graphics.configuration = {
+        isoImage.configurationName = "(safe graphics, nomodeset)";
+        boot.kernelParams = [ "nomodeset" ];
+      };
     }
 
     # An unattended stick asks nothing, so it needs no screen: run the
@@ -189,6 +206,9 @@ in
           HOME = "/root";
           AGENCY_UI = "${./ui}";
           AGENCY_HOSTNAME = settings.hostName;
+          AGENCY_KEYBOARD = keyboard;
+          AGENCY_KEYBOARD_FILE = keyboardFile;
+          AGENCY_KIOSK_RESTART = kioskRestart;
           AGENCY_USER = settings.user;
           AGENCY_GITHUB_USER = settings.githubUser;
           AGENCY_APPS = "${appsTable}";
@@ -228,14 +248,21 @@ in
         program = kiosk;
         extraArguments = [ "-s" ];
         environment.WLR_RENDERER = "pixman";
+        environment.XKB_DEFAULT_LAYOUT = keyboard;
       };
 
       # If the kiosk stops for any reason, fall back to the text wizard.
-      systemd.services."cage-tty1".unitConfig = {
-        OnFailure = [ "agency-text.service" ];
-        OnSuccess = [ "agency-text.service" ];
+      systemd.services."cage-tty1" = {
+        unitConfig = {
+          OnFailure = [ "agency-text.service" ];
+          OnSuccess = [ "agency-text.service" ];
+        };
+        # The layout chosen on the setup screen, if any (see keyboardFile).
+        serviceConfig.EnvironmentFile = "-${keyboardFile}";
       };
-      systemd.services.agency-text = textInstaller;
+      systemd.services.agency-text = lib.recursiveUpdate textInstaller {
+        unitConfig.ConditionPathExists = "!${kioskRestart}";
+      };
     })
   ];
 }
