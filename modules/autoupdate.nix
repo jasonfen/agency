@@ -12,6 +12,11 @@
     wants = [ "network-online.target" ];
     after = [ "network-online.target" ];
     path = [ "/run/wrappers" "/run/current-system/sw" ];
+    # The switch at the end of an update almost always changes this unit
+    # (its PATH holds nixpkgs store paths), and switch-to-configuration
+    # would then stop it mid-run: the new system is active but flake.lock
+    # is never committed. NixOS's own system.autoUpgrade does the same.
+    restartIfChanged = false;
     serviceConfig = {
       Type = "oneshot";
       User = settings.user;
