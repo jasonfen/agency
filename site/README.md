@@ -13,6 +13,8 @@ The page reads the download link, size and checksum from `iso.makors.xyz/latest.
 
 Visitor stats go to PostHog; `src/analytics.ts` lists the events, and it only runs on agency.makors.xyz. ISO downloads are counted on the server by `worker.js`, which answers `/download` and redirects to the file.
 
+`/changelog` (`changelog.html`, `src/changelog.tsx`) lists the newest commits on main, read from the GitHub API when it loads.
+
 Pushing to `main` deploys to agency.makors.xyz (Cloudflare Workers Builds).
 
 The logos in `public/` are copies from `../docs`.

@@ -414,6 +414,9 @@ export default function App() {
             <a href={`${githubUrl}/blob/main/docs/install.md`} className="underline-offset-4 hover:underline">
               Install details
             </a>
+            <a href="/changelog" className="underline-offset-4 hover:underline">
+              Changelog
+            </a>
             <a href={`${githubUrl}/issues`} className="underline-offset-4 hover:underline">
               Report a problem
             </a>

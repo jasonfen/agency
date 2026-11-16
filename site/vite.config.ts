@@ -10,4 +10,17 @@ export default defineConfig({
   resolve: {
     alias: { '@': path.resolve(import.meta.dirname, './src') },
   },
+  // Two pages: the landing page, and /changelog.
+  environments: {
+    client: {
+      build: {
+        rollupOptions: {
+          input: {
+            main: path.resolve(import.meta.dirname, 'index.html'),
+            changelog: path.resolve(import.meta.dirname, 'changelog.html'),
+          },
+        },
+      },
+    },
+  },
 })
