@@ -13,6 +13,11 @@
 
   timeZone = "UTC";
 
+  # Which nixpkgs the system is built from. "stable" (nixos-26.05) only gets
+  # fixes until the next release; "unstable" (nixos-unstable) has the newest
+  # versions and occasionally breaks. `agency channel` switches it.
+  channel = "stable";
+
   # GitHub account whose public SSH keys can log in. Empty: the wizard asks.
   githubUser = "";
 

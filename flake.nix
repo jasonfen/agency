@@ -4,6 +4,10 @@
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-26.05";
 
+    # Used instead of nixpkgs when settings.nix has `channel = "unstable";`
+    # (see `agency channel`). The installer always uses the stable one.
+    nixpkgs-unstable.url = "github:NixOS/nixpkgs/nixos-unstable";
+
     disko = {
       url = "github:nix-community/disko";
       inputs.nixpkgs.follows = "nixpkgs";
@@ -20,6 +24,7 @@
     {
       self,
       nixpkgs,
+      nixpkgs-unstable,
       disko,
       sops-nix,
       ...
@@ -28,11 +33,23 @@
       system = "x86_64-linux";
       settings = import ./settings.nix;
       specialArgs = { inherit self settings; };
+
+      # The package set this machine follows: stable unless settings.nix
+      # says `channel = "unstable";`. disko and sops-nix keep following the
+      # stable one either way; they are libraries, not the system.
+      channel = settings.channel or "stable";
+      machinePkgs =
+        if channel == "unstable" then
+          nixpkgs-unstable
+        else if channel == "stable" then
+          nixpkgs
+        else
+          throw "settings.nix: channel must be \"stable\" or \"unstable\", not \"${channel}\"";
     in
     {
       # The machine itself. The configuration is always called "agency";
       # the machine's own name is hostName in settings.nix.
-      nixosConfigurations.agency = nixpkgs.lib.nixosSystem {
+      nixosConfigurations.agency = machinePkgs.lib.nixosSystem {
         inherit system specialArgs;
         modules = [
           disko.nixosModules.disko
@@ -58,7 +75,7 @@
         signin = app.signin or null;
         group = app.group or (if app ? npm then "Agents" else "Other");
         description = app.description or "";
-      }) (import ./apps.nix { pkgs = nixpkgs.legacyPackages.${system}; inherit settings; });
+      }) (import ./apps.nix { pkgs = machinePkgs.legacyPackages.${system}; inherit settings; });
 
       packages.${system} = {
         iso = self.nixosConfigurations.installer.config.system.build.isoImage;
