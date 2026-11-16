@@ -93,7 +93,9 @@ function DownloadButton({ className, from }: { className?: string; from: string 
   const release = useRelease()
   return (
     <a
-      href={release.url}
+      // On the site, /download counts the download and redirects to the ISO
+      // (worker.js). `npm run dev` has no worker, so it links to the file.
+      href={import.meta.env.PROD ? `/download?from=${from}` : release.url}
       download={release.fileName}
       onClick={() => track('download_clicked', { from, version: release.version, date: release.date })}
       className={cn(

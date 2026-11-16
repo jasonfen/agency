@@ -46,7 +46,13 @@ let
     lib.sort lib.lessThan (map (app: app.id) (lib.filter (app: !(app ? npm) && isOn app) catalog))
   );
 
+  rev = self.rev or (lib.removeSuffix "-dirty" (self.dirtyRev or ""));
+
+  # Counts setups and installs, anonymously (installer/count.sh).
+  count = pkgs.callPackage ../pkgs/count.nix { inherit rev; };
+
   tools = [
+    count
     pkgs.openssl # hashes the console password
     config.system.build.nixos-install
     config.nix.package
@@ -92,7 +98,7 @@ let
       export AGENCY_WIPE=${target.system.build.destroyFormatMount}/bin/disko-destroy-format-mount
       export AGENCY_SYSTEM=${target.system.build.toplevel}
       export AGENCY_SOURCE=${self}
-      export AGENCY_REV=${lib.escapeShellArg (self.rev or (lib.removeSuffix "-dirty" (self.dirtyRev or "")))}
+      export AGENCY_REV=${lib.escapeShellArg rev}
 
       ${builtins.readFile ./agency-install.sh}
     '';

@@ -66,7 +66,13 @@ To join Tailscale unattended, format a second stick as FAT with the label `AGENC
 
 ## Counting installs
 
-The flash command and the installer each send anonymous events to PostHog, so we can count how many sticks get written and how many installs finish. The flash command sends the OS and CPU type; the installer sends the computer's maker and model and the apps picked. The ID is random for each run, and nothing else goes with them: no names, keys or addresses. Set `DO_NOT_TRACK=1` to turn both off (`curl -fsSL https://agency.makors.xyz/flash | DO_NOT_TRACK=1 sh`). The installed machine sends nothing.
+agency sends a few anonymous events to PostHog, so we can count how many sticks get written, how many installs finish, and how many of those machines start.
+
+- The flash command sends two: when it starts and when the stick is written. They carry the OS and CPU type.
+- The installer sends one when setup first has a network, one when the install starts and one when it finishes or fails. They carry the computer's maker and model, and the last one the apps picked.
+- The new machine sends one, the first time it starts with a network. After that it sends nothing.
+
+The ID is random for each run, and nothing else goes with them: no names, keys or addresses. Set `DO_NOT_TRACK=1` to turn them off (`curl -fsSL https://agency.makors.xyz/flash | DO_NOT_TRACK=1 sh`, or `sudo DO_NOT_TRACK=1 agency-install` on the stick).
 
 ## Limits
 

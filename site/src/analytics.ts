@@ -5,9 +5,14 @@
 // Events, besides pageviews and clicks:
 //   download_clicked        the ISO link       { from }
 //   command_copied          a copy button      { command, from }
-// From outside the page:
+// From outside the page, in the order an install goes:
+//   iso_download                    worker.js, counted on the server  { from, country, os }
 //   flash_started, flash_written    public/flash
-//   install_completed               installer/agency-install.sh
+//   setup_started                   the installer, once it has a network
+//   install_started, install_completed, install_failed { step }
+//   first_boot                      the new machine, the first time it starts
+// The installer's four and first_boot share one random ID per install
+// (installer/count.sh), so they line up as a funnel.
 
 const key = 'phc_yBGvjZW4wAfvVSufdysvJxTWdoyQAtP7fcxrg4khcif4'
 

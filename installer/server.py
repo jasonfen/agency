@@ -82,6 +82,15 @@ def info():
     }
 
 
+def count(event):
+    """Count one step of setup, anonymously and at most once (installer/count.sh)."""
+    try:
+        subprocess.Popen(["agency-count", "--once", event, "frontend=screen"],
+                         stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    except OSError:
+        pass
+
+
 def online():
     ok, _, _ = sh("curl", "-fsS", "--max-time", "6", "-o", "/dev/null", "https://github.com")
     return ok
@@ -108,7 +117,10 @@ def network():
             has_wifi = True
             if up:
                 ssid = connection
-    return {"online": online(), "wired": wired, "wifi": has_wifi, "ssid": ssid}
+    up = online()
+    if up:
+        count("setup_started")
+    return {"online": up, "wired": wired, "wifi": has_wifi, "ssid": ssid}
 
 
 def wifi_list():
@@ -561,7 +573,8 @@ class Install:
 
     def _run(self, cmd):
         try:
-            p = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, errors="replace")
+            p = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, errors="replace",
+                                 env={**os.environ, "AGENCY_FRONTEND": "screen"})
         except OSError as e:
             with self.lock:
                 self.state.update(state="failed", error=str(e))

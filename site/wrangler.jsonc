@@ -5,9 +5,14 @@
   "observability": {
     "enabled": true
   },
+  // worker.js counts ISO downloads and runs for /download only; the rest
+  // of the site is served straight from dist/.
+  "main": "worker.js",
   "assets": {
     "directory": "./dist",
-    "not_found_handling": "single-page-application"
+    "binding": "ASSETS",
+    "not_found_handling": "single-page-application",
+    "run_worker_first": ["/download"]
   },
   "workers_dev": true,
   "routes": [{ "pattern": "agency.makors.xyz", "custom_domain": true }]

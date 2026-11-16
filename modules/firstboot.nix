@@ -9,6 +9,10 @@
 #   password-hash  the console password chosen in setup, as a hash
 #   home/          sign-ins made on the setup screen (GitHub, agent CLIs),
 #                  copied into the agent's home
+#   count/         the random ID the installer counted this install under;
+#                  one `first_boot` event is sent with it, so we can tell
+#                  that an install led to a machine that starts. The machine
+#                  sends nothing after that. Absent if DO_NOT_TRACK was set.
 #
 # Then it links /etc/nixos to the agency repo on GitHub (`agency setup-repo`),
 # so `agency update` works. If that fails, `agency update` does it later.
@@ -19,11 +23,15 @@
   config,
   lib,
   pkgs,
+  self,
   settings,
   ...
 }:
 let
   notes = "/var/lib/agency/firstboot";
+  count = pkgs.callPackage ../pkgs/count.nix {
+    rev = self.rev or (lib.removeSuffix "-dirty" (self.dirtyRev or ""));
+  };
   user = settings.user;
   home = config.users.users.${settings.user}.home;
 
@@ -101,6 +109,11 @@ in
       until curl -fsS --max-time 10 -o /dev/null https://cache.nixos.org/nix-cache-info; do
         sleep 5
       done
+
+      if [ -s ${notes}/count/id ]; then
+        AGENCY_COUNT_DIR=${notes}/count ${count}/bin/agency-count first_boot || true
+      fi
+      rm -rf ${notes}/count
 
       # as_user COMMAND: run COMMAND as the agent, with its user services.
       uid=$(id -u ${user})

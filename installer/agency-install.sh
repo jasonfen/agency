@@ -171,8 +171,23 @@ run() {
 
 mkdir -p "$work"
 
+# Anonymous counts of how far installs get (see installer/count.sh). The
+# setup screen says so itself; otherwise this is the text wizard or an
+# unattended stick.
+frontend=${AGENCY_FRONTEND:-}
+if [ -z "$frontend" ]; then
+  if [ "$unattended" = 1 ]; then frontend=unattended; else frontend=text; fi
+fi
+count() { agency-count "$@" "frontend=$frontend" || true; }
+
 ts_pid=""
-cleanup() { if [ -n "$ts_pid" ]; then kill "$ts_pid" 2>/dev/null || true; fi; }
+# "started" while the disk is being changed, so a stop in there is counted.
+installing=""
+step=""
+cleanup() {
+  if [ -n "$ts_pid" ]; then kill "$ts_pid" 2>/dev/null || true; fi
+  if [ "$installing" = started ]; then count install_failed "step=$step"; fi
+}
 trap cleanup EXIT
 
 # --------------------------------------------------- checks, no questions ---
@@ -248,6 +263,7 @@ else
     fi
   fi
 fi
+count --once setup_started
 
 # -------------------------------------------------------- who can log in ---
 
@@ -525,6 +541,10 @@ fi
 # -------------------------------------------------------------- install ---
 # From here on the disk is being changed.
 
+installing=started
+step=partition
+count install_started
+
 if [ -n "$clear_old" ]; then
   say "Clearing the earlier install on $clear_old ..."
   lsblk -lnpo NAME "$clear_old" | tail -n +2 | while read -r part; do wipefs -a "$part"; done
@@ -538,11 +558,13 @@ ln -sfn "$disk" /dev/agency-target
 (umask 077 && head -c 32 /dev/urandom | base64 -w0 >"$luks_key")
 
 run "Partitioning and formatting the disk" "$AGENCY_WIPE" --yes-wipe-all-disks
+step=copy
 run "Copying the system to disk (several minutes)" \
   nixos-install --system "$AGENCY_SYSTEM" --no-root-passwd --no-channel-copy
 
 # Bind the disk encryption to this machine's TPM so it starts unattended,
 # add a recovery key, then remove the throwaway install key.
+step=encrypt
 say "Setting up disk encryption ..."
 install -d -m 700 /mnt/root
 if ! {
@@ -559,6 +581,7 @@ chmod 600 /mnt/root/luks-recovery-key.txt
 rm -f "$luks_key"
 
 # SSH keys, and a copy of this repo with the choices made above.
+step=finish
 say "Finishing up ..."
 install -D -m 644 "$keys" /mnt/etc/agency/authorized_keys
 mkdir -p /mnt/etc/nixos
@@ -653,14 +676,12 @@ if [ -b "$stick" ]; then
 fi
 sync
 
-# One anonymous event to PostHog, so we can count installs: the computer's
-# maker and model, the apps picked, and whether it ran unattended. No names,
-# keys or addresses; the ID is random. DO_NOT_TRACK=1 turns it off.
-if [ -z "${DO_NOT_TRACK:-}" ] || [ "$DO_NOT_TRACK" = 0 ]; then
-  dmi() { tr -d "\"\\\\" </sys/class/dmi/id/"$1" 2>/dev/null | tr -s '[:space:]' ' ' | sed 's/ $//'; }
-  curl -fsS --max-time 5 -o /dev/null -H 'Content-Type: application/json' \
-    -d "{\"api_key\":\"phc_yBGvjZW4wAfvVSufdysvJxTWdoyQAtP7fcxrg4khcif4\",\"event\":\"install_completed\",\"distinct_id\":\"$(cat /proc/sys/kernel/random/uuid)\",\"properties\":{\"\$process_person_profile\":false,\"vendor\":\"$(dmi sys_vendor)\",\"model\":\"$(dmi product_name)\",\"apps\":\"${chosen[*]}\",\"unattended\":$unattended}}" \
-    https://us.i.posthog.com/i/v0/e/ 2>/dev/null || true
+# Counted as finished. The new machine sends one more event, the first time
+# it starts with a network, under the same random ID (modules/firstboot.nix).
+installing=finished
+count install_completed "apps=${chosen[*]}" "unattended=$([ "$AGENCY_UNATTENDED" = 1 ] && echo true || echo false)"
+if [ -s /run/agency-count/id ]; then
+  install -D -m 600 /run/agency-count/id "$notes/count/id"
 fi
 
 # ----------------------------------------------------------------- done ---
