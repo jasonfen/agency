@@ -65,8 +65,9 @@ jobs:
           compression-level: 0
           retention-days: 3
 
-      # Uploads the ISO twice at once, to its own build folder and to latest/.
-      # Copying it inside R2 afterwards took longer than a second upload.
+      # Uploads the ISO once, then copies it to latest/ inside R2. The copy
+      # needs no upload bandwidth, but it is slow in small pieces, so the
+      # aws CLI is told to use larger parts and more of them at a time.
       - name: Publish ISO to R2
         if: steps.r2.outputs.publish == 'true'
         env:
@@ -89,15 +90,15 @@ jobs:
           s3="aws s3 --endpoint-url $R2_ENDPOINT"
           disp='attachment; filename="agency-installer.iso"'
 
+          SECONDS=0
           $s3 cp "$iso" "s3://$BUCKET/$build" --only-show-errors \
-            --content-type application/x-iso9660-image --content-disposition "$disp" &
-          build_upload=$!
-          $s3 cp "$iso" "s3://$BUCKET/latest/agency-installer.iso" --only-show-errors \
+            --content-type application/x-iso9660-image --content-disposition "$disp"
+          echo "Uploaded in ${SECONDS}s"
+          SECONDS=0
+          $s3 cp "s3://$BUCKET/$build" "s3://$BUCKET/latest/agency-installer.iso" --only-show-errors \
             --content-type application/x-iso9660-image --content-disposition "$disp" \
-            --cache-control "public, max-age=300" &
-          latest_upload=$!
-          wait "$build_upload"
-          wait "$latest_upload"
+            --metadata-directive REPLACE --cache-control "public, max-age=300"
+          echo "Copied to latest/ in ${SECONDS}s"
 
           cat > latest.json <<EOF
           {
