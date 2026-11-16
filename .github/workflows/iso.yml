@@ -1,13 +1,22 @@
 name: Build installer ISO
 
-# Builds the USB installer. It takes several minutes, so it does not run on
-# every push: start it from the Actions tab ("Run workflow"), or push a
-# version tag such as v0.1.0.
+# Builds the USB installer on every push to main, so the download page always
+# offers the newest build. Changes to the website alone are skipped: they
+# don't change the ISO. It can also be started from the Actions tab ("Run
+# workflow"), or by pushing a version tag such as v0.1.0.
 
 on:
   workflow_dispatch:
   push:
+    branches: [main]
     tags: ["v*"]
+    paths-ignore: ["site/**"]
+
+# One build at a time, in order, so an older build never replaces a newer one
+# on the download page. A build that is waiting gives way to a newer push.
+concurrency:
+  group: iso-${{ github.ref }}
+  cancel-in-progress: false
 
 permissions:
   contents: write
