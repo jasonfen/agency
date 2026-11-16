@@ -638,6 +638,9 @@ def restic(*args, capture=True, check=True):
 
 def snapshots():
     """Oldest first."""
+    # The password, and with it the repository, comes with the first backup.
+    if not BACKUP_PASSWORD.exists():
+        return []
     found = json.loads(restic("snapshots", "--json", "--no-lock", "--host", host()).stdout or "[]")
     for snap in found:
         # "2026-11-15T10:00:01.123456789-05:00": restic gives nanoseconds,

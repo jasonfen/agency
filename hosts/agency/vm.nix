@@ -15,6 +15,10 @@
 # /etc/nixos holds a copy of this repo, as on a real machine, but it
 # describes a real machine's disks, so rebuilding the system
 # (`agency rebuild`, `agency update`, system apps) is not part of the trial.
+#
+# The first time it has a network, the VM sends one anonymous `vm_started`
+# event (docs/install.md, "Counting installs"). DO_NOT_TRACK=1 on the
+# command line turns it off: DO_NOT_TRACK=1 nix run github:makors/agency#vm
 {
   lib,
   pkgs,
@@ -22,6 +26,11 @@
   settings,
   ...
 }:
+let
+  count = pkgs.callPackage ../../pkgs/count.nix {
+    rev = self.rev or (lib.removeSuffix "-dirty" (self.dirtyRev or ""));
+  };
+in
 {
   virtualisation.vmVariant = {
     networking.hostName = lib.mkForce "agency";
@@ -47,7 +56,29 @@
       '';
     };
 
+    # One anonymous `vm_started` event per VM disk, so we can count trials
+    # (installer/count.sh). The ID and the marker live on the VM's disk, so
+    # later boots of the same VM send nothing. The host's DO_NOT_TRACK comes
+    # in through QEMU's firmware config (see qemu.options below).
+    boot.kernelModules = [ "qemu_fw_cfg" ];
+    systemd.services.agency-vm-count = {
+      description = "Count this VM once";
+      wantedBy = [ "multi-user.target" ];
+      after = [ "network-online.target" ];
+      wants = [ "network-online.target" ];
+      unitConfig.ConditionPathExists = "!/var/lib/agency/vm-count/vm_started";
+      # "exec": boot never waits for this.
+      serviceConfig.Type = "exec";
+      environment.AGENCY_COUNT_DIR = "/var/lib/agency/vm-count";
+      script = ''
+        dnt=/sys/firmware/qemu_fw_cfg/by_name/opt/agency/do_not_track/raw
+        if [ -r $dnt ]; then DO_NOT_TRACK=$(cat $dnt); export DO_NOT_TRACK; fi
+        ${count}/bin/agency-count --once vm_started || true
+      '';
+    };
+
     virtualisation = {
+      qemu.options = [ ''-fw_cfg "name=opt/agency/do_not_track,string=''${DO_NOT_TRACK:-0}"'' ];
       memorySize = 4096;
       cores = 4;
       diskSize = 20 * 1024;

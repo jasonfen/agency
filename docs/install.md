@@ -71,8 +71,9 @@ agency sends a few anonymous events to PostHog, so we can count how many sticks 
 - The flash command sends two: when it starts and when the stick is written. They carry the OS and CPU type.
 - The installer sends one when setup first has a network, one when the install starts and one when it finishes or fails. They carry the computer's maker and model, and the last one the apps picked.
 - The new machine sends one, the first time it starts with a network. After that it sends nothing.
+- The [try-it VM](existing-nixos.md) sends one, the first time it has a network. Its ID and the note that it was sent stay on the VM's disk, so it sends nothing on later starts; deleting `agency.qcow2` makes a new VM that counts again.
 
-The ID is random for each run, and nothing else goes with them: no names, keys or addresses. Set `DO_NOT_TRACK=1` to turn them off (`curl -fsSL https://agency.makors.xyz/flash | DO_NOT_TRACK=1 sh`, or `sudo DO_NOT_TRACK=1 agency-install` on the stick).
+The ID is random for each run, and nothing else goes with them: no names, keys or addresses. Set `DO_NOT_TRACK=1` to turn them off (`curl -fsSL https://agency.makors.xyz/flash | DO_NOT_TRACK=1 sh`, `sudo DO_NOT_TRACK=1 agency-install` on the stick, or `DO_NOT_TRACK=1 nix run github:makors/agency#vm`).
 
 ## If something goes wrong
 

@@ -18,6 +18,8 @@ From there `agency` shows the machine, `gui chromium` starts a browser on its de
 
 The VM is for looking around. `/etc/nixos` is there, but it describes a real machine's disks, so rebuilding the system (`agency rebuild`, `agency update`, apps that change the system) does not work in it. Its disk is `agency.qcow2` in the folder you started it from; delete that file to start fresh.
 
+The first time it has a network, the VM sends one anonymous event, so we can count trials ([what is sent](install.md#counting-installs)). Start it with `DO_NOT_TRACK=1` in front to turn that off.
+
 ## Run it on a machine that already has NixOS
 
 The installer erases a disk and lays it out its own way. If the machine already runs NixOS, or you want your own disk layout, you can keep the disk as it is: agency becomes the machine's configuration, with your hardware file in place of the installer's.

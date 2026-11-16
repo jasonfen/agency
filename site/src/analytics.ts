@@ -11,6 +11,7 @@
 //   setup_started                   the installer, once it has a network
 //   install_started, install_completed, install_failed { step }
 //   first_boot                      the new machine, the first time it starts
+//   vm_started                      the try-it VM (hosts/agency/vm.nix), once per VM disk
 // The installer's four and first_boot share one random ID per install
 // (installer/count.sh), so they line up as a funnel.
 
