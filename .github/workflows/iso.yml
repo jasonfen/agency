@@ -38,10 +38,26 @@ jobs:
             git push
           fi
 
+      # Builds from main and version tags go to Cloudflare R2, so the download
+      # page always offers the newest build. Other builds, and forks without
+      # the R2 secrets, keep the ISO as a workflow artifact instead.
+      - name: Decide where the ISO goes
+        id: r2
+        if: github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v')
+        env:
+          KEY: ${{ secrets.R2_ACCESS_KEY_ID }}
+        run: |
+          if [ -n "$KEY" ]; then
+            echo "publish=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "R2 secrets not set, keeping the ISO as an artifact"
+          fi
+
       - name: Build ISO
         run: nix build .#iso --print-build-logs
 
       - name: Upload ISO
+        if: steps.r2.outputs.publish != 'true'
         uses: actions/upload-artifact@v4
         with:
           name: agency-installer
@@ -49,11 +65,10 @@ jobs:
           compression-level: 0
           retention-days: 3
 
-      # Puts the ISO on Cloudflare R2 so the download page always offers the
-      # newest build. Builds from main and version tags only. Skipped when the
-      # R2 secrets are not set, for example in a fork.
+      # Uploads the ISO twice at once, to its own build folder and to latest/.
+      # Copying it inside R2 afterwards took longer than a second upload.
       - name: Publish ISO to R2
-        if: github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v')
+        if: steps.r2.outputs.publish == 'true'
         env:
           AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
           AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
@@ -64,9 +79,9 @@ jobs:
           R2_ENDPOINT: ${{ secrets.R2_ENDPOINT }}
           BUCKET: agency-iso
         run: |
-          if [ -z "$AWS_ACCESS_KEY_ID" ]; then
-            echo "R2 secrets not set, skipping"; exit 0
-          fi
+          aws configure set default.s3.max_concurrent_requests 32
+          aws configure set default.s3.multipart_chunksize 64MB
+
           iso=$(ls result/iso/*.iso)
           date=$(date -u +%Y-%m-%d)
           short=${GITHUB_SHA::7}
@@ -74,11 +89,15 @@ jobs:
           s3="aws s3 --endpoint-url $R2_ENDPOINT"
           disp='attachment; filename="agency-installer.iso"'
 
-          $s3 cp "$iso" "s3://$BUCKET/$build" \
-            --content-type application/x-iso9660-image --content-disposition "$disp"
-          $s3 cp "s3://$BUCKET/$build" "s3://$BUCKET/latest/agency-installer.iso" \
+          $s3 cp "$iso" "s3://$BUCKET/$build" --only-show-errors \
+            --content-type application/x-iso9660-image --content-disposition "$disp" &
+          build_upload=$!
+          $s3 cp "$iso" "s3://$BUCKET/latest/agency-installer.iso" --only-show-errors \
             --content-type application/x-iso9660-image --content-disposition "$disp" \
-            --metadata-directive REPLACE --cache-control "public, max-age=300"
+            --cache-control "public, max-age=300" &
+          latest_upload=$!
+          wait "$build_upload"
+          wait "$latest_upload"
 
           cat > latest.json <<EOF
           {
