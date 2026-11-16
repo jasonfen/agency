@@ -20,7 +20,10 @@
   };
 
   # Drivers needed before the disk is unlocked. "vmd" covers Intel machines
-  # whose firmware puts the NVMe drive in RAID mode.
+  # whose firmware puts the NVMe drive in RAID mode. The virtio ones are
+  # for virtual machines (Proxmox, QEMU/KVM), whose disks are often
+  # virtio-scsi or virtio-blk: the installer offers those disks, and
+  # without these the installed system cannot find its disk at boot.
   boot.initrd.availableKernelModules = [
     "xhci_pci"
     "ehci_pci"
@@ -34,6 +37,9 @@
     "thunderbolt"
     "tpm_crb"
     "tpm_tis"
+    "virtio_pci"
+    "virtio_scsi"
+    "virtio_blk"
   ];
   boot.kernelModules = [
     "kvm-intel"
