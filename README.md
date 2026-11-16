@@ -15,7 +15,7 @@
 
 ## Install
 
-You need an x86-64 laptop or PC with UEFI and TPM 2.0, a USB stick, and an SSH key on your GitHub account.
+You need an x86-64 laptop or PC with UEFI, TPM 2.0 and a disk of 20 GB or more, a USB stick, and an SSH key on your GitHub account.
 
 1. Write the installer to the stick. On a Mac or Linux:
 
