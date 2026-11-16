@@ -44,6 +44,8 @@ nix --extra-experimental-features 'nix-command flakes' run github:makors/agency#
 
 That, and running agency on a machine that already has NixOS, is in [docs/existing-nixos.md](docs/existing-nixos.md).
 
+To run the installer itself in a VM (Proxmox, QEMU, VirtualBox, Hyper-V, VMware), set it up as in [Installing in a VM](docs/install.md#installing-in-a-vm).
+
 ## Use
 
 Start any agent you picked. It already knows how the machine works.

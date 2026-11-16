@@ -26,12 +26,13 @@ The installer erases a disk and lays it out its own way. If the machine already 
 
 This makes the whole machine an agency machine. It gets an `agent` account with passwordless sudo, SSH with keys only, NetworkManager, Tailscale and a firewall, a status screen on its display, and it never sleeps. Your files and other accounts stay. Use a machine that is meant for agents.
 
-1. Put the repo in `/etc/nixos`, keeping the old configuration next to it:
+1. Put the repo in `/etc/nixos`, keeping the old configuration next to it. A stock NixOS has no `git`, so this opens a shell that has it; keep using that shell for the steps below:
 
    ```sh
+   nix-shell -p git
    sudo mv /etc/nixos /etc/nixos.old
-   sudo git clone https://github.com/makors/agency /etc/nixos
-   sudo chown -R "$USER" /etc/nixos
+   git clone https://github.com/makors/agency ~/agency
+   sudo mv ~/agency /etc/nixos
    cd /etc/nixos
    ```
 
@@ -58,10 +59,10 @@ This makes the whole machine an agency machine. It gets an `agent` account with 
 
 3. In `settings.nix`, set `hostName`, and put your SSH public key in `sshKeys`. Password login over SSH is off, so without a key there you cannot log in as `agent`. Choose `apps` while you are there.
 
-4. Commit, and switch:
+4. Commit, and switch. If git has no name and email for you yet, the `-c` options give it some for this commit:
 
    ```sh
-   git add -A && git commit -m "This machine"
+   git add -A && git -c user.name="$USER" -c user.email="$USER@localhost" commit -m "This machine"
    sudo nixos-rebuild switch --flake path:/etc/nixos#agency
    ```
 
