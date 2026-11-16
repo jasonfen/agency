@@ -653,6 +653,16 @@ if [ -b "$stick" ]; then
 fi
 sync
 
+# One anonymous event to PostHog, so we can count installs: the computer's
+# maker and model, the apps picked, and whether it ran unattended. No names,
+# keys or addresses; the ID is random. DO_NOT_TRACK=1 turns it off.
+if [ -z "${DO_NOT_TRACK:-}" ] || [ "$DO_NOT_TRACK" = 0 ]; then
+  dmi() { tr -d '"\\' </sys/class/dmi/id/"$1" 2>/dev/null | tr -s '[:space:]' ' ' | sed 's/ $//'; }
+  curl -fsS --max-time 5 -o /dev/null -H 'Content-Type: application/json' \
+    -d "{\"api_key\":\"phc_yBGvjZW4wAfvVSufdysvJxTWdoyQAtP7fcxrg4khcif4\",\"event\":\"install_completed\",\"distinct_id\":\"$(cat /proc/sys/kernel/random/uuid)\",\"properties\":{\"\$process_person_profile\":false,\"vendor\":\"$(dmi sys_vendor)\",\"model\":\"$(dmi product_name)\",\"apps\":\"${chosen[*]}\",\"unattended\":$unattended}}" \
+    https://us.i.posthog.com/i/v0/e/ 2>/dev/null || true
+fi
+
 # ----------------------------------------------------------------- done ---
 
 recovery=$(cat /mnt/root/luks-recovery-key.txt)

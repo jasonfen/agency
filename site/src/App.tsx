@@ -16,6 +16,7 @@ import { Dither, PixelCheck, PixelCursor, PixelStar } from '@/components/pixel'
 import { buttonVariants } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
 import { githubUrl, useRelease } from '@/release'
+import { track } from '@/analytics'
 
 const flashCommand = 'curl -fsSL https://agency.makors.xyz/flash | sh'
 const sshCommand = 'ssh agent@agency'
@@ -88,12 +89,13 @@ function StarLink() {
   )
 }
 
-function DownloadButton({ className }: { className?: string }) {
+function DownloadButton({ className, from }: { className?: string; from: string }) {
   const release = useRelease()
   return (
     <a
       href={release.url}
       download={release.fileName}
+      onClick={() => track('download_clicked', { from, version: release.version, date: release.date })}
       className={cn(
         buttonVariants({ size: 'lg' }),
         'h-14 gap-3 border-2 border-ink px-5 text-lg font-semibold hover:bg-primary [&_svg:not([class*=size-])]:size-5',
@@ -122,7 +124,7 @@ function usePlatform(): Platform {
   return platform
 }
 
-function FlashCommand({ className }: { className?: string }) {
+function FlashCommand({ className, from }: { className?: string; from: string }) {
   return (
     <div
       className={cn(
@@ -134,7 +136,7 @@ function FlashCommand({ className }: { className?: string }) {
         $
       </span>
       <code className="min-w-0 flex-1 overflow-x-auto whitespace-nowrap">{flashCommand}</code>
-      <CopyButton value={flashCommand} label="Copy the command" />
+      <CopyButton value={flashCommand} label="Copy the command" event={{ command: 'flash', from }} />
     </div>
   )
 }
@@ -155,11 +157,11 @@ function GithubButton({ className }: { className?: string }) {
   )
 }
 
-function Snippet({ value, label }: { value: string; label: string }) {
+function Snippet({ value, label, name }: { value: string; label: string; name: string }) {
   return (
     <div className="flex items-center gap-2 border-2 border-ink bg-card py-1 pr-1 pl-3.5 font-mono text-[0.9rem] text-card-foreground dark:border-edge">
       <code className="min-w-0 flex-1 overflow-x-auto whitespace-nowrap">{value}</code>
-      <CopyButton value={value} label={label} />
+      <CopyButton value={value} label={label} event={{ command: name, from: 'setup' }} />
     </div>
   )
 }
@@ -204,7 +206,7 @@ export default function App() {
       <p className="mt-1.5 mb-4 text-muted-foreground">
         Plug in a USB stick and run this. It downloads the installer, checks it, and writes the stick.
       </p>
-      <FlashCommand />
+      <FlashCommand from="download" />
     </div>
   )
   const windowsOption = (
@@ -213,7 +215,7 @@ export default function App() {
       <p className="mt-1.5 mb-4 text-muted-foreground">
         Download the ISO, then write it with balenaEtcher, or with Rufus in DD Image mode.
       </p>
-      <DownloadButton />
+      <DownloadButton from="download" />
     </div>
   )
 
@@ -250,7 +252,7 @@ export default function App() {
                 </p>
                 {platform === 'unix' ? (
                   <>
-                    <FlashCommand className="mt-8 max-w-xl" />
+                    <FlashCommand className="mt-8 max-w-xl" from="hero" />
                     <p className="mt-5 text-sm text-muted-foreground">
                       Writes the installer ({sizeLabel}) to a USB stick. On Windows,{' '}
                       <a href="#download" className="underline underline-offset-4 hover:text-foreground">
@@ -262,7 +264,7 @@ export default function App() {
                 ) : (
                   <>
                     <div className="mt-8 flex flex-col gap-4 sm:flex-row sm:flex-wrap">
-                      <DownloadButton />
+                      <DownloadButton from="hero" />
                       <GithubButton />
                     </div>
                     <p className="mt-5 text-sm text-muted-foreground">
@@ -349,8 +351,8 @@ export default function App() {
               title="SSH in"
               below={
                 <>
-                  <Snippet value={sshCommand} label="Copy the SSH command" />
-                  <Snippet value={desktopUrl} label="Copy the desktop address" />
+                  <Snippet value={sshCommand} label="Copy the SSH command" name="ssh" />
+                  <Snippet value={desktopUrl} label="Copy the desktop address" name="desktop" />
                 </>
               }
             >

@@ -10,6 +10,11 @@
 #
 # On Windows, download the ISO from https://agency.makors.xyz and write it
 # with Rufus (DD Image mode) or balenaEtcher.
+#
+# It sends two anonymous events to PostHog, so we can count flashes: one when
+# it starts and one when the stick is written. They carry the OS, the CPU and
+# the installer version, and a random ID made for this run, nothing else.
+# DO_NOT_TRACK=1 turns them off.
 
 set -eu
 
@@ -17,6 +22,15 @@ ISO_BASE="https://iso.makors.xyz"
 CALIGULA_VERSION="v0.5.0"
 
 say() { printf '%s\n' "$*"; }
+
+run_id=$(cat /proc/sys/kernel/random/uuid 2>/dev/null || uuidgen 2>/dev/null || echo "$$-$(date +%s)")
+# Sends one event in the background, and never fails or waits.
+count() {
+  [ -z "${DO_NOT_TRACK:-}" ] || [ "$DO_NOT_TRACK" = 0 ] || return 0
+  curl -fsS --max-time 5 -o /dev/null -H 'Content-Type: application/json' \
+    -d "{\"api_key\":\"phc_yBGvjZW4wAfvVSufdysvJxTWdoyQAtP7fcxrg4khcif4\",\"event\":\"$1\",\"distinct_id\":\"$run_id\",\"properties\":{\"\$process_person_profile\":false,\"os\":\"$(uname -s)\",\"arch\":\"$(uname -m)\",\"iso_sha256\":\"${hash:-}\"}}" \
+    https://us.i.posthog.com/i/v0/e/ >/dev/null 2>&1 &
+}
 die() { printf 'agency: %s\n' "$*" >&2; exit 1; }
 
 case "$(uname -s)-$(uname -m)" in
@@ -45,6 +59,7 @@ url="$ISO_BASE/$(field url)"
 hash=$(field sha256)
 size=$(field sizeBytes)
 [ -n "$hash" ] || die "the installer's checksum is missing from latest.json"
+count flash_started
 iso="$dir/agency-installer-$(printf '%s' "$hash" | cut -c1-12).iso"
 
 if [ ! -f "$iso" ] || [ "$(wc -c <"$iso" | tr -d ' ')" != "$size" ]; then
@@ -91,5 +106,6 @@ fi
 run=""
 [ "$(id -u)" = 0 ] || run=sudo
 $run "$tool" burn "$iso" -s "sha256-$hash" --hash-of raw -z none --root never "$@" </dev/tty
+count flash_written
 
 say "Done. Boot the laptop from it, with Secure Boot off and TPM on in the BIOS."

@@ -64,6 +64,10 @@ Unattended installs choose the NVMe disk, or the SATA disk if there is no NVMe. 
 
 To join Tailscale unattended, format a second stick as FAT with the label `AGENCY` and put a one-time auth key on it in a file named `tailscale-authkey`. The installer also saves the disk recovery key to that stick.
 
+## Counting installs
+
+The flash command and the installer each send anonymous events to PostHog, so we can count how many sticks get written and how many installs finish. The flash command sends the OS and CPU type; the installer sends the computer's maker and model and the apps picked. The ID is random for each run, and nothing else goes with them: no names, keys or addresses. Set `DO_NOT_TRACK=1` to turn both off (`curl -fsSL https://agency.makors.xyz/flash | DO_NOT_TRACK=1 sh`). The installed machine sends nothing.
+
 ## Limits
 
 - Secure Boot must be off. TPM unlock protects the data if the disk is removed, but not if someone boots another OS on the machine.

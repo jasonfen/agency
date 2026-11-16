@@ -2,14 +2,18 @@ import { Check, Copy } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
+import { track } from '@/analytics'
 
 export function CopyButton({
   value,
   label,
+  event,
   className,
 }: {
   value: string
   label: string
+  /** Properties for a `command_copied` event; none sends nothing. */
+  event?: Record<string, unknown>
   className?: string
 }) {
   const [copied, setCopied] = useState(false)
@@ -24,6 +28,7 @@ export function CopyButton({
     try {
       await navigator.clipboard.writeText(value)
       setCopied(true)
+      if (event) track('command_copied', event)
     } catch {
       // Clipboard is blocked (old browser or no HTTPS). The text stays selectable.
     }
