@@ -2,6 +2,7 @@
 # normal use; everything comes in over SSH or Tailscale.
 {
   config,
+  options,
   pkgs,
   settings,
   ...
@@ -30,11 +31,24 @@ in
     enable = true;
     nssmdns4 = true;
     openFirewall = true;
-    publish = {
-      enable = true;
-      addresses = true;
-    };
-  };
+  }
+  # NixOS 26.11 moved publishing under `settings`, where it is off by default.
+  // (
+    if !(options.services.avahi ? settings) then
+      {
+        publish = {
+          enable = true;
+          addresses = true;
+        };
+      }
+    else
+      {
+        settings.publish = {
+          disable-publishing = false;
+          publish-addresses = true;
+        };
+      }
+  );
 
   # Tailscale: the private network you use from anywhere. Everything arriving
   # over it is trusted; from the LAN only SSH is open.

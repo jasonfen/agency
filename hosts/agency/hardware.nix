@@ -1,7 +1,7 @@
 # Hardware settings that suit most x86-64 laptops and PCs, Intel or AMD.
 # If something on your machine is not detected, compare with the output of
 # `nixos-generate-config --no-filesystems --show-hardware-config`.
-{ modulesPath, ... }:
+{ lib, modulesPath, ... }:
 {
   imports = [ (modulesPath + "/installer/scan/not-detected.nix") ];
 
@@ -12,7 +12,12 @@
   boot.loader.systemd-boot.enable = true;
   boot.loader.systemd-boot.configurationLimit = 20;
   boot.loader.efi.canTouchEfiVariables = true;
-  boot.initrd.systemd.enable = true; # needed for TPM disk unlock
+  # The systemd initrd is needed for TPM disk unlock. From NixOS 26.11 it is
+  # the only initrd, and setting the option is an error. (The option is still
+  # declared there, so this has to check the release, not the option.)
+  boot.initrd.systemd = lib.optionalAttrs (lib.versionOlder lib.trivial.release "26.11") {
+    enable = true;
+  };
 
   # Drivers needed before the disk is unlocked. "vmd" covers Intel machines
   # whose firmware puts the NVMe drive in RAID mode.

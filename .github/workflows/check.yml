@@ -13,9 +13,21 @@ on:
 
 jobs:
   check:
+    # `channel` in settings.nix picks stable or unstable nixpkgs. Build both:
+    # unstable breaks builds (not just options) now and then.
+    strategy:
+      fail-fast: false
+      matrix:
+        channel: [stable, unstable]
+    name: check (${{ matrix.channel }})
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+
+      - name: Follow ${{ matrix.channel }} nixpkgs
+        run: |
+          sed -i 's/^  channel = ".*";$/  channel = "${{ matrix.channel }}";/' settings.nix
+          grep -q '^  channel = "${{ matrix.channel }}";$' settings.nix
 
       - name: Lint the installer
         run: |
@@ -34,3 +46,4 @@ jobs:
 
       - name: Build the system
         run: nix build .#system --print-build-logs
+
