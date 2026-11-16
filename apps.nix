@@ -254,6 +254,13 @@
     system.environment.systemPackages = [ pkgs.libreoffice ];
   }
   {
+    id = "silverbullet";
+    label = "SilverBullet";
+    group = "Office";
+    description = "A Markdown notes and wiki server with Lua scripting. silverbullet <folder> serves the folder on localhost:3000.";
+    system.environment.systemPackages = [ pkgs.silverbullet ];
+  }
+  {
     id = "blender";
     label = "Blender";
     group = "Graphics and media";
