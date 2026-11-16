@@ -50,8 +50,9 @@
       # The app catalog as plain data, for `agency apps`.
       appCatalog = map (app: {
         inherit (app) id label;
-        kind = if app ? npm then "npm" else "system";
+        kind = if app ? npm then "npm" else if app ? flatpak then "flatpak" else "system";
         npm = app.npm or null;
+        flatpak = app.flatpak or null;
         setup = app.setup or null;
         teardown = app.teardown or null;
         signin = app.signin or null;

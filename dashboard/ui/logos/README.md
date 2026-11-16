@@ -10,5 +10,11 @@ Flatpak, LibreOffice or Inkscape logo, so `flatpak.svg` is from
 `libreoffice.svg` and `inkscape.svg` are from the Papirus icon theme.
 `go.svg` is recoloured to Go's blue.
 
+The 3D printing apps aren't in svgl either. `bambu-studio.svg` (Bambu
+Lab's mark), `openscad.svg` and `freecad.svg` are from Simple Icons, filled
+in each brand's colour. `orca-slicer.svg` and `prusa-slicer.svg` are the
+apps' own icons, from their GitHub repos (SoftFever/OrcaSlicer and
+prusa3d/PrusaSlicer).
+
 The logos are trademarks of their owners and are used only to name their
 software.

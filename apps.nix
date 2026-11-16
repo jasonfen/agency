@@ -7,6 +7,10 @@
 #                      into the agent account with `bun add -g`, so it can
 #                      update itself
 #
+#   flatpak = "id"  a desktop app from Flathub, by its Flatpak id, for apps
+#                      nixpkgs lacks or builds badly. Choosing one turns on
+#                      Flatpak; the rebuild installs it (modules/apps.nix).
+#
 # An npm entry may also have `setup`, a command the agent account runs once
 # the package is installed, `teardown`, run before it is removed, and
 # `signin`, the command that signs it in to its service, shown once it is
@@ -90,7 +94,7 @@
     id = "flatpak";
     label = "Flatpak";
     group = "Development";
-    description = "Desktop apps from Flathub that nixpkgs lacks.";
+    description = "Desktop apps from Flathub that nixpkgs lacks. Every Flatpak gets full access to the machine.";
     system = {
       services.flatpak.enable = true;
       xdg.portal = {
@@ -171,5 +175,46 @@
     group = "Graphics and media";
     description = "Records a desktop, for demos.";
     system.environment.systemPackages = [ pkgs.obs-studio ];
+  }
+
+  # 3D printing
+  {
+    id = "bambu-studio";
+    label = "Bambu Studio";
+    group = "3D printing";
+    description = "Bambu Lab's slicer, which also sends prints to Bambu printers and watches them. From Flathub: flatpak run com.bambulab.BambuStudio.";
+    # Flathub has Bambu's own build. The nixpkgs one is unfree (it downloads
+    # Bambu's closed network plugin), so it is not in the binary cache and
+    # takes most of an hour to compile.
+    flatpak = "com.bambulab.BambuStudio";
+  }
+  {
+    id = "orca-slicer";
+    label = "Orca Slicer";
+    group = "3D printing";
+    description = "A slicer for Bambu, Prusa, Voron, Creality and most other printers, which also sends prints to them over the network.";
+    system.environment.systemPackages = [ pkgs.orca-slicer ];
+  }
+  {
+    id = "prusa-slicer";
+    label = "PrusaSlicer";
+    group = "3D printing";
+    description = "Prusa's slicer, for Prusa printers and many others. Slices without a window too: prusa-slicer --export-gcode part.stl.";
+    system.environment.systemPackages = [ pkgs.prusa-slicer ];
+  }
+  {
+    id = "openscad";
+    label = "OpenSCAD";
+    group = "3D printing";
+    description = "Parts written as code, the easiest way for an agent to design one: openscad -o part.stl part.scad.";
+    # The development snapshot: the 2021 release is far slower on big models.
+    system.environment.systemPackages = [ pkgs.openscad-unstable ];
+  }
+  {
+    id = "freecad";
+    label = "FreeCAD";
+    group = "3D printing";
+    description = "Parametric CAD, with sketches and constraints, for parts that need exact dimensions. Scriptable in Python with freecadcmd.";
+    system.environment.systemPackages = [ pkgs.freecad ];
   }
 ]

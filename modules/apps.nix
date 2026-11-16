@@ -10,6 +10,16 @@
 # machine rebuilt from settings.nix gets them without the installer or
 # `agency apps add`. It never removes anything: `agency apps remove` does.
 # Watch it with: journalctl -u agency-npm-apps
+#
+# Entries of the `flatpak` kind turn on Flatpak (as the `flatpak` entry
+# does), and agency-flatpak-apps installs them from Flathub, system-wide.
+# The rebuild runs it and waits for it, so `agency apps add` returns once
+# the app is there. It also uninstalls the Flatpaks it installed that are
+# no longer chosen, so it stays defined while any are left.
+#
+# Every Flatpak, these and any installed by hand, gets full access to the
+# machine: a global override, written here, opens the sandbox. Change it
+# here; `flatpak override` cannot, as the file is read-only.
 {
   config,
   lib,
@@ -21,6 +31,23 @@ let
   catalog = import ../apps.nix { inherit pkgs settings; };
   chosen = builtins.filter (app: builtins.elem app.id settings.apps) catalog;
   npmApps = builtins.filter (app: app ? npm) chosen;
+  flatpakApps = builtins.filter (app: app ? flatpak) chosen;
+  flatpakEntry = lib.findFirst (app: app.id == "flatpak") { } catalog;
+
+  # Opens the sandbox of every Flatpak: all files, devices, sockets and
+  # buses, as if the app were installed normally.
+  fullAccess = pkgs.writeText "flatpak-overrides-global" ''
+    [Context]
+    shared=network;ipc;
+    sockets=x11;wayland;pulseaudio;session-bus;system-bus;ssh-auth;pcsc;cups;gpg-agent;
+    devices=all;
+    features=devel;multiarch;bluetooth;canbus;per-app-dev-shm;
+    filesystems=host;host-etc;
+  '';
+
+  # Flatpaks this service installed, one id per line, so it knows which
+  # to remove when they are switched off.
+  flatpakState = "/var/lib/agency/flatpak-apps";
 
   user = settings.user;
   home = config.users.users.${user}.home;
@@ -34,6 +61,78 @@ in
   config = lib.mkMerge (
     map (app: app.system or { }) chosen
     ++ [
+      (lib.mkIf (flatpakApps != [ ] && !(builtins.elem "flatpak" settings.apps)) (
+        flatpakEntry.system or { }
+      ))
+
+      (lib.mkIf config.services.flatpak.enable {
+        systemd.tmpfiles.rules = [ "L+ /var/lib/flatpak/overrides/global - - - - ${fullAccess}" ];
+      })
+
+      {
+        systemd.services.agency-flatpak-apps = {
+          description = "Install the Flathub apps chosen in settings.nix";
+          wantedBy = [ "multi-user.target" ];
+          wants = [ "network-online.target" ];
+          after = [
+            "network-online.target"
+            "sysinit.target"
+          ];
+          # Nothing to do with none chosen and none installed before.
+          unitConfig.ConditionPathExists = lib.mkIf (flatpakApps == [ ]) flatpakState;
+          # No default dependencies, so boot does not wait for a download.
+          unitConfig.DefaultDependencies = false;
+          conflicts = [ "shutdown.target" ];
+          before = [ "shutdown.target" ];
+          path = [
+            pkgs.flatpak
+            pkgs.curl
+            pkgs.coreutils
+            pkgs.gnugrep
+          ];
+          serviceConfig = {
+            Type = "oneshot";
+            RemainAfterExit = true;
+          };
+          script = ''
+            want=(${lib.escapeShellArgs (map (app: app.flatpak) flatpakApps)})
+            mkdir -p ${dirOf flatpakState}
+            touch ${flatpakState}
+
+            removed=
+            while read -r id; do
+              [ -n "$id" ] || continue
+              if ! printf '%s\n' "''${want[@]}" | grep -qxF "$id"; then
+                echo "Removing $id"
+                flatpak uninstall --system --noninteractive "$id" || true
+                removed=1
+              fi
+            done <${flatpakState}
+            if [ -n "$removed" ]; then
+              flatpak uninstall --system --noninteractive --unused || true
+            fi
+
+            missing=()
+            for id in "''${want[@]}"; do
+              flatpak info --system "$id" >/dev/null 2>&1 || missing+=("$id")
+            done
+            if [ "''${#missing[@]}" -gt 0 ]; then
+              # Up to five minutes for the network, so a rebuild offline fails
+              # rather than hangs.
+              for _ in $(seq 60); do
+                curl -fsS --max-time 5 -o /dev/null https://dl.flathub.org/repo/summary.idx && break
+                sleep 5
+              done
+              flatpak remote-add --system --if-not-exists flathub https://dl.flathub.org/repo/flathub.flatpakrepo
+              echo "Installing ''${missing[*]}"
+              flatpak install --system --noninteractive flathub "''${missing[@]}"
+            fi
+
+            printf '%s\n' "''${want[@]}" | grep -v '^$' >${flatpakState} || rm -f ${flatpakState}
+          '';
+        };
+      }
+
       (lib.mkIf (npmApps != [ ]) {
         systemd.services.agency-npm-apps = {
           description = "Install the npm apps chosen in settings.nix";
