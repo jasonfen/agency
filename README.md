@@ -6,7 +6,7 @@
 </p>
 
 <p align="center">
-  Turns a spare laptop into a computer for your agents.
+  give your agents the computer you already have
 </p>
 
 <p align="center">
