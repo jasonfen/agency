@@ -10,7 +10,7 @@
 </p>
 
 <p align="center">
-  <img src="docs/setup-welcome.png" alt="The first screen of the agency installer" width="720">
+  <img src="docs/dashboard.png" alt="The agency dashboard: CPU, memory and disks, and a desktop with a browser open" width="720">
 </p>
 
 ## Install
