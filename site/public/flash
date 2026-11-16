@@ -55,7 +55,12 @@ dir="$HOME/Downloads"
 
 meta=$(curl -fsSL "$ISO_BASE/latest.json") || die "could not reach $ISO_BASE"
 field() { printf '%s' "$meta" | tr -d '\n' | sed -n "s/.*\"$1\": *\"\{0,1\}\([^\",}]*\).*/\1/p"; }
-url="$ISO_BASE/$(field url)"
+# Download this build's own copy, not latest/: that one is replaced while a
+# new build is published, and a download or resume that spans two builds
+# would not match the checksum. (Older latest.json files had no "build".)
+path=$(field build)
+[ -n "$path" ] || path=$(field url)
+url="$ISO_BASE/$path"
 hash=$(field sha256)
 size=$(field sizeBytes)
 [ -n "$hash" ] || die "the installer's checksum is missing from latest.json"

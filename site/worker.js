@@ -10,7 +10,8 @@
 // and OS family, and a random ID. Browsers that ask not to be tracked
 // (DNT or Global Privacy Control) and link previews are not counted.
 
-const iso = 'https://iso.makors.xyz/latest/agency-installer.iso'
+const base = 'https://iso.makors.xyz'
+const latest = `${base}/latest/agency-installer.iso`
 const key = 'phc_yBGvjZW4wAfvVSufdysvJxTWdoyQAtP7fcxrg4khcif4'
 const previews = /bot|crawl|spider|preview|slack|discord|telegram|whatsapp|facebook|twitter|embed/i
 
@@ -49,6 +50,22 @@ export default {
         }).catch(() => {}),
       )
     }
-    return Response.redirect(iso, 302)
+    return Response.redirect(await newest(), 302)
   },
+}
+
+// The newest build's own copy of the ISO. latest/ is overwritten while a new
+// build is published, so a download started then could get a file that
+// matches neither build's checksum on the page; each build's copy never
+// changes. Falls back to latest/ if latest.json cannot be read.
+async function newest() {
+  try {
+    const r = await fetch(`${base}/latest.json`, { cf: { cacheTtl: 30 } })
+    const j = r.ok ? await r.json() : {}
+    return typeof j.build === 'string' && /^builds\/[\w.-]+\/agency-installer\.iso$/.test(j.build)
+      ? `${base}/${j.build}`
+      : latest
+  } catch {
+    return latest
+  }
 }
