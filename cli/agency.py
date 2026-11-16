@@ -537,6 +537,11 @@ def cmd_apps(args):
         write_setting("apps", nix_list(chosen))
 
     done = [a for a in adds if a not in failed]
+    # npm apps said this as they installed (npm_apps); the rest say it here.
+    for app_id in done:
+        app = by_id[app_id]
+        if app["kind"] != "npm" and app.get("signin"):
+            say(f"To sign {app['label']} in, run: {app['signin']}")
     parts = ([f"add {', '.join(done)}"] if done else []) + ([f"remove {', '.join(removes)}"] if removes else [])
     if parts:
         commit(f"Apps: {'; '.join(parts)}", "settings.nix")

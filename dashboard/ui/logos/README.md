@@ -9,6 +9,9 @@ Flatpak, LibreOffice or Inkscape logo, so `flatpak.svg` is from
 [Simple Icons](https://simpleicons.org) (filled in Flatpak's blue) and
 `libreoffice.svg` and `inkscape.svg` are from the Papirus icon theme.
 `go.svg` is recoloured to Go's blue.
+`eas.svg` is svgl's Expo logo, `android-sdk.svg` its Android icon and
+`copilot-cli.svg` its GitHub Copilot logo. svgl's AMP logo is a different
+project, so `amp.svg` is Amp's own favicon, from ampcode.com.
 
 The 3D printing apps aren't in svgl either. `bambu-studio.svg` (Bambu
 Lab's mark), `openscad.svg` and `freecad.svg` are from Simple Icons, filled

@@ -12,9 +12,10 @@
 #                      Flatpak; the rebuild installs it (modules/apps.nix).
 #
 # An npm entry may also have `setup`, a command the agent account runs once
-# the package is installed, `teardown`, run before it is removed, and
-# `signin`, the command that signs it in to its service, shown once it is
-# installed (for tools that sign in from a terminal, not from Settings).
+# the package is installed, and `teardown`, run before it is removed. Any
+# entry may have `signin`, the command that signs it in to its service,
+# shown once it is installed (for tools that sign in from a terminal, not
+# from Settings).
 #
 # Every entry has a `group` and a one-line `description` for the
 # dashboard's app catalog, and may have a logo: dashboard/ui/logos/<id>.svg.
@@ -56,12 +57,78 @@
     teardown = "t3 service uninstall";
   }
   {
+    id = "gemini-cli";
+    label = "Gemini CLI";
+    group = "Agents";
+    description = "Google's coding agent for the terminal. Signs in on first run: gemini.";
+    npm = "@google/gemini-cli";
+  }
+  {
+    id = "copilot-cli";
+    label = "GitHub Copilot CLI";
+    group = "Agents";
+    description = "GitHub's coding agent for the terminal, with a Copilot plan. Signs in with /login inside copilot.";
+    npm = "@github/copilot";
+  }
+  {
+    id = "amp";
+    label = "Amp";
+    group = "Agents";
+    description = "Amp's coding agent for the terminal (ampcode.com).";
+    # @sourcegraph/amp is now a wrapper whose command Bun does not link.
+    npm = "@ampcode/cli";
+    signin = "amp login";
+  }
+
+  # Services: the command-line tools of the services apps ship to.
+  {
     id = "cloudflare";
     label = "Cloudflare CLI";
-    group = "Development";
+    group = "Services";
     description = "cf, for Cloudflare: Workers, DNS, R2 and the rest of the account.";
     npm = "cf";
     signin = "cf auth login --no-browser";
+  }
+  {
+    id = "vercel";
+    label = "Vercel CLI";
+    group = "Services";
+    description = "vercel, for deploying web apps to Vercel, with preview links, logs and environment variables.";
+    npm = "vercel";
+    signin = "vercel login";
+  }
+  {
+    id = "railway";
+    label = "Railway CLI";
+    group = "Services";
+    description = "railway, for deploying services and databases to Railway and reading their logs.";
+    npm = "@railway/cli";
+    signin = "railway login --browserless";
+  }
+  {
+    id = "supabase";
+    label = "Supabase CLI";
+    group = "Services";
+    description = "supabase, for Supabase projects: migrations, types, edge functions, and a local copy of the stack in Docker.";
+    # Supabase does not support a global npm install.
+    system.environment.systemPackages = [ pkgs.supabase-cli ];
+    signin = "supabase login";
+  }
+  {
+    id = "stripe";
+    label = "Stripe CLI";
+    group = "Services";
+    description = "stripe, for Stripe's API, test events, and webhooks forwarded to a local server: stripe listen --forward-to localhost:3000/webhook.";
+    system.environment.systemPackages = [ pkgs.stripe-cli ];
+    signin = "stripe login";
+  }
+  {
+    id = "eas";
+    label = "Expo EAS CLI";
+    group = "Services";
+    description = "eas, for building, submitting and updating Expo and React Native apps on Expo's servers.";
+    npm = "eas-cli";
+    signin = "eas login";
   }
 
   # Apps and tools
@@ -117,6 +184,44 @@
     group = "Development";
     description = "The Go compiler and tools.";
     system.environment.systemPackages = [ pkgs.go ];
+  }
+  {
+    id = "android-sdk";
+    label = "Android SDK";
+    group = "Development";
+    description = "adb, the emulator and what Gradle needs to build Android apps, with JDK 21. The SDK is read-only: a build that wants another SDK version must ask for one installed here.";
+    system =
+      let
+        android = pkgs.androidenv.composeAndroidPackages {
+          platformVersions = [
+            "35"
+            "36"
+          ];
+          buildToolsVersions = [
+            "35.0.0"
+            "36.0.0"
+          ];
+          includeEmulator = true;
+          includeSystemImages = true;
+          systemImageTypes = [ "google_apis" ];
+          abiVersions = [ "x86_64" ];
+        };
+        sdk = "${android.androidsdk}/libexec/android-sdk";
+      in
+      {
+        nixpkgs.config.android_sdk.accept_license = true;
+        environment.systemPackages = [ android.androidsdk ];
+        environment.variables = {
+          ANDROID_HOME = sdk;
+          ANDROID_SDK_ROOT = sdk;
+        };
+        programs.java = {
+          enable = true;
+          package = pkgs.jdk21;
+        };
+        # The emulator runs on KVM.
+        users.users.${settings.user}.extraGroups = [ "kvm" ];
+      };
   }
   {
     id = "vscodium";
