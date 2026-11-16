@@ -1,7 +1,8 @@
 name: Check
 
-# Runs on every push. It is quick: it lints the installer and makes sure the
-# system and the installer still evaluate, without building anything.
+# Runs on every push. It lints the installer, makes sure the installer still
+# evaluates, and builds the whole system, so a change that evaluates but does
+# not build fails here before `agency update` sends it to machines.
 # Building the ISO is a separate workflow that runs only when asked.
 
 on:
@@ -22,7 +23,14 @@ jobs:
           python3 -m py_compile installer/server.py cli/agency.py
           node --check installer/ui/app.js
 
+      # The hosted runner is short on disk for a whole system.
+      - name: Free disk space (in the background)
+        run: sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL &
+
       - uses: cachix/install-nix-action@v31
 
-      - name: Evaluate the system and the installer
+      - name: Evaluate the installer
         run: nix eval --raw .#packages.x86_64-linux.iso.drvPath
+
+      - name: Build the system
+        run: nix build .#system --print-build-logs
