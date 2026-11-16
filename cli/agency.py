@@ -465,12 +465,19 @@ def cmd_channel(args):
     else:
         write_setting("channel", json.dumps(args.channel))
     lock_before = (REPO / "flake.lock").read_text()
+    system_before = output(["readlink", "-f", "/run/current-system"])
     try:
         # Lock the input if this checkout has never used it.
         run(["nix", "flake", "lock", f"path:{REPO}"])
         rebuild("test" if args.test else "switch")
     except SystemExit:
-        git("checkout", "--", "settings.nix", "flake.lock", check=False)
+        if output(["readlink", "-f", "/run/current-system"]) == system_before:
+            # Nothing switched: put settings.nix back the way it was.
+            git("checkout", "--", "settings.nix", "flake.lock", check=False)
+        elif not args.test:
+            # The new system is running even though the switch reported a
+            # problem, so settings.nix must say so. rebuild() has explained.
+            commit(f"Follow {args.channel} nixpkgs", "settings.nix", "flake.lock")
         raise
     if args.test:
         say(f"Running {args.channel} until the next reboot. To keep it: agency channel {args.channel}")
