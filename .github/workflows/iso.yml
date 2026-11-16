@@ -65,9 +65,8 @@ jobs:
           compression-level: 0
           retention-days: 3
 
-      # Uploads the ISO once, then copies it to latest/ inside R2. The copy
-      # needs no upload bandwidth, but it is slow in small pieces, so the
-      # aws CLI is told to use larger parts and more of them at a time.
+      # Uploads the ISO once, then copies it to latest/ inside R2. (Uploading
+      # it twice at once is slower: both share the runner's bandwidth.)
       - name: Publish ISO to R2
         if: steps.r2.outputs.publish == 'true'
         env:
@@ -80,9 +79,6 @@ jobs:
           R2_ENDPOINT: ${{ secrets.R2_ENDPOINT }}
           BUCKET: agency-iso
         run: |
-          aws configure set default.s3.max_concurrent_requests 32
-          aws configure set default.s3.multipart_chunksize 64MB
-
           iso=$(ls result/iso/*.iso)
           date=$(date -u +%Y-%m-%d)
           short=${GITHUB_SHA::7}
@@ -94,6 +90,11 @@ jobs:
           $s3 cp "$iso" "s3://$BUCKET/$build" --only-show-errors \
             --content-type application/x-iso9660-image --content-disposition "$disp"
           echo "Uploaded in ${SECONDS}s"
+
+          # Larger parts, more at a time: the upload is slower this way, the
+          # copy twice as fast.
+          aws configure set default.s3.max_concurrent_requests 32
+          aws configure set default.s3.multipart_chunksize 64MB
           SECONDS=0
           $s3 cp "s3://$BUCKET/$build" "s3://$BUCKET/latest/agency-installer.iso" --only-show-errors \
             --content-type application/x-iso9660-image --content-disposition "$disp" \
