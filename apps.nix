@@ -257,7 +257,7 @@
     id = "silverbullet";
     label = "SilverBullet";
     group = "Office";
-    description = "SilverBullet ${pkgs.silverbullet.version}: a Markdown notes and wiki server with Lua scripting. silverbullet <folder> serves the folder on localhost:3000.";
+    description = "A Markdown notes and wiki server with Lua scripting. silverbullet <folder> serves the folder on localhost:3000.";
     system.environment.systemPackages = [ pkgs.silverbullet ];
   }
   {
