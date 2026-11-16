@@ -9,6 +9,9 @@ Flatpak, LibreOffice or Inkscape logo, so `flatpak.svg` is from
 [Simple Icons](https://simpleicons.org) (filled in Flatpak's blue) and
 `libreoffice.svg` and `inkscape.svg` are from the Papirus icon theme.
 `go.svg` is recoloured to Go's blue.
+`silverbullet.svg` is SilverBullet's own favicon (an SVG that wraps a PNG),
+from client/images/ in silverbulletmd/silverbullet; svgl and Simple Icons
+don't have it.
 `eas.svg` is svgl's Expo logo, `android-sdk.svg` its Android icon and
 `copilot-cli.svg` its GitHub Copilot logo. svgl's AMP logo is a different
 project, so `amp.svg` is Amp's own favicon, from ampcode.com.
