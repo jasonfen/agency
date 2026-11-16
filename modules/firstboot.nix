@@ -18,6 +18,9 @@
 # so `agency update` works. If that fails, `agency update` does it later.
 #
 # Each note is deleted once done, so a failed run retries only what is left.
+# An app that fails to install does not hold up the rest: it is written to
+# /var/lib/agency/firstboot-failed, which `agency` shows. Anything else that
+# fails is retried a few times, then left until the next start.
 # Watch it with: journalctl -fu agency-firstboot
 {
   config,
@@ -40,6 +43,11 @@ let
   setups = lib.concatMapStrings (app: ''
     ${lib.escapeShellArg app.npm}) as_user ${lib.escapeShellArg app.setup} || true ;;
   '') (builtins.filter (app: app ? npm && app ? setup) catalog);
+  # "ID PACKAGE" for each npm package, for the list of failed apps.
+  ids = lib.concatMapStrings (app: ''
+    ${lib.escapeShellArg app.npm}) echo ${lib.escapeShellArg "${app.id} ${app.npm}"} ;;
+  '') (builtins.filter (app: app ? npm) catalog);
+  failed = "/var/lib/agency/firstboot-failed";
 in
 {
   systemd.services.agency-firstboot = {
@@ -47,7 +55,13 @@ in
     wantedBy = [ "multi-user.target" ];
     after = [ "network-online.target" ];
     wants = [ "network-online.target" ];
-    unitConfig.ConditionPathExists = notes;
+    unitConfig = {
+      ConditionPathExists = notes;
+      # Retry a failed run (no network yet, a rebuild that failed) five
+      # times, then stop until the next start instead of looping forever.
+      StartLimitIntervalSec = "1d";
+      StartLimitBurst = 5;
+    };
     # A rebuild must not restart the service that is running it.
     restartIfChanged = false;
     stopIfChanged = false;
@@ -123,12 +137,21 @@ in
           PATH=${home}/.bun/bin:${home}/.npm-global/bin:$PATH \
           XDG_RUNTIME_DIR=/run/user/$uid \
           DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/$uid/bus \
-          ${pkgs.runtimeShell} -c "$1"
+          ${pkgs.runtimeShell} -c "$1" </dev/null
       }
+      # One at a time, so one that fails does not stop the others. The ones
+      # that fail are recorded and skipped; the rest of setup goes on.
       if [ -s ${notes}/npm-packages ]; then
-        as_user "bun add -g --trust $(tr '\n' ' ' <${notes}/npm-packages)"
         systemctl start user@$uid.service || true
         while read -r pkg; do
+          [ -n "$pkg" ] || continue
+          if ! as_user "bun add -g --trust $pkg"; then
+            case "$pkg" in
+            ${ids}
+            *) echo "$pkg $pkg" ;;
+            esac >>${failed}
+            continue
+          fi
           case "$pkg" in
           ${setups}
           esac

@@ -33,6 +33,7 @@ NOT_SYSTEM = ("site", "docs", ".github", "**/README.md")
 # Written by the installer: the commit of this repo the machine came from.
 SOURCE_REV = Path("/var/lib/agency/source-rev")
 FIRSTBOOT = Path("/var/lib/agency/firstboot")
+FIRSTBOOT_FAILED = Path("/var/lib/agency/firstboot-failed")
 RECOVERY_KEY = Path("/root/luks-recovery-key.txt")
 
 # Backups (modules/backup.nix).
@@ -351,8 +352,22 @@ def cmd_status(args):
     say(f"  secrets    {', '.join(names) if names else 'none'}")
 
     notes = []
-    if root_exists(FIRSTBOOT):
+    if output(["systemctl", "is-failed", "agency-firstboot.service"]) == "failed":
+        notes.append("First-start setup failed several times and stopped; it tries again at the next start. "
+                     "See: journalctl -u agency-firstboot")
+    elif root_exists(FIRSTBOOT):
         notes.append("First-start setup is still running: journalctl -fu agency-firstboot")
+    # Lines "ID PACKAGE". One installed since then is no longer listed.
+    try:
+        failed_lines = [line.split() for line in FIRSTBOOT_FAILED.read_text().splitlines()]
+    except OSError:
+        failed_lines = []
+    bun_modules = Path.home() / ".bun/install/global/node_modules"
+    failed_apps = [f[0] for f in failed_lines if len(f) == 2 and not (bun_modules / f[1]).exists()]
+    if failed_apps:
+        names = " ".join(dict.fromkeys(failed_apps))
+        notes.append(f"These apps did not install on the first start: {names}. "
+                     f"Try again with: agency apps remove {names} && agency apps add {names}")
     if run(["sudo", "-n", "test", "-e", RECOVERY_KEY], check=False, capture=True).returncode == 0:
         notes.append("The disk recovery key is still on disk. A person should run: agency recovery-key")
     try:
