@@ -13,8 +13,8 @@
 #
 # Entries of the `flatpak` kind turn on Flatpak (as the `flatpak` entry
 # does), and agency-flatpak-apps installs them from Flathub, system-wide.
-# The rebuild runs it and waits for it, so `agency apps add` returns once
-# the app is there. It also uninstalls the Flatpaks it installed that are
+# The rebuild starts it, at boot it checks again, and `agency apps` waits
+# for it, so it returns once the app is there. It also uninstalls the Flatpaks it installed that are
 # no longer chosen, so it stays defined while any are left.
 #
 # Every Flatpak, these and any installed by hand, gets full access to the

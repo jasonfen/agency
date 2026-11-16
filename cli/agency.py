@@ -520,6 +520,15 @@ def cmd_apps(args):
             SETTINGS.write_text(before)
             die("nothing was changed: the rebuild failed (see above).")
 
+    # Flathub apps: the rebuild starts agency-flatpak-apps without waiting
+    # for it. Run it again and wait, so a download that fails is reported.
+    if any(by_id[a]["kind"] == "flatpak" for a in adds + removes):
+        say("Installing and removing Flathub apps ...")
+        if run(["sudo", tool("systemctl"), "restart", "agency-flatpak-apps"], check=False).returncode != 0:
+            commit(f"Apps: {', '.join(adds + removes)}", "settings.nix")
+            die("the Flathub download failed. See: journalctl -u agency-flatpak-apps\n"
+                "It tries again at the next boot, or now with: sudo systemctl restart agency-flatpak-apps")
+
     # Then agent CLIs, installed with Bun into this account. One that fails
     # to install is left off.
     failed = npm_apps(by_id, adds, removes)
