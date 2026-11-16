@@ -13,7 +13,8 @@
   boot.loader.systemd-boot.configurationLimit = 20;
   boot.loader.efi.canTouchEfiVariables = true;
   # The systemd initrd is needed for TPM disk unlock. From NixOS 26.11 it is
-  # the only initrd, and setting the option is an error.
+  # the only initrd, and setting the option is an error. (The option is still
+  # declared there, so this has to check the release, not the option.)
   boot.initrd.systemd = lib.optionalAttrs (lib.versionOlder lib.trivial.release "26.11") {
     enable = true;
   };

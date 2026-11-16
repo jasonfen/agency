@@ -13,9 +13,21 @@ on:
 
 jobs:
   check:
+    # `channel` in settings.nix picks stable or unstable nixpkgs. Build both:
+    # unstable breaks builds (not just options) now and then.
+    strategy:
+      fail-fast: false
+      matrix:
+        channel: [stable, unstable]
+    name: check (${{ matrix.channel }})
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+
+      - name: Follow ${{ matrix.channel }} nixpkgs
+        run: |
+          sed -i 's/^  channel = ".*";$/  channel = "${{ matrix.channel }}";/' settings.nix
+          grep -q '^  channel = "${{ matrix.channel }}";$' settings.nix
 
       - name: Lint the installer
         run: |
@@ -35,11 +47,3 @@ jobs:
       - name: Build the system
         run: nix build .#system --print-build-logs
 
-      # `channel = "unstable";` in settings.nix builds from nixos-unstable.
-      # Evaluating it catches options that unstable renamed or removed.
-      - name: Evaluate the system on unstable
-        run: |
-          sed -i 's/^  channel = "stable";$/  channel = "unstable";/' settings.nix
-          grep -q '^  channel = "unstable";$' settings.nix
-          nix eval --raw .#nixosConfigurations.agency.config.system.build.toplevel.drvPath
-          git checkout -- settings.nix

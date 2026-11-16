@@ -2,7 +2,7 @@
 # normal use; everything comes in over SSH or Tailscale.
 {
   config,
-  lib,
+  options,
   pkgs,
   settings,
   ...
@@ -34,7 +34,7 @@ in
   }
   # NixOS 26.11 moved publishing under `settings`, where it is off by default.
   // (
-    if lib.versionOlder lib.trivial.release "26.11" then
+    if !(options.services.avahi ? settings) then
       {
         publish = {
           enable = true;

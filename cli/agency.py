@@ -430,61 +430,94 @@ def cmd_auto_update(args):
     record("updated nixpkgs and switched to it")
 
 
+def channel_trial():
+    """The channel settings.nix tries without having committed it, or None.
+
+    `agency channel X --test` leaves `channel` changed and uncommitted (and
+    perhaps flake.lock). Any other uncommitted change is not a trial.
+    """
+    shown = git("show", "HEAD:settings.nix", capture=True, check=False)
+    if shown.returncode != 0:
+        return None
+    committed = shown.stdout
+    text = SETTINGS.read_text()
+    trying = channel()
+    if text == committed or trying == committed_channel(committed):
+        return None
+    as_committed = re.sub(r'^  channel = .*;$', f'  channel = {json.dumps(trying)};',
+                          committed, count=1, flags=re.M)
+    return trying if as_committed == text else None
+
+
+def committed_channel(text):
+    match = re.search(r'^  channel = "([^"]*)";$', text, re.M)
+    return match.group(1) if match else "stable"
+
+
+def trial_running():
+    """Whether the running system is a `--test` one, not the boot default."""
+    return (output(["readlink", "-f", "/run/current-system"])
+            != output(["readlink", "-f", "/nix/var/nix/profiles/system"]))
+
+
 def cmd_channel(args):
-    current = channel()
+    trial = channel_trial()
     if not args.channel:
-        say(f"This machine follows {current} nixpkgs ({channel_input()} in flake.nix).")
-        say("Switch with: agency channel stable|unstable [--test]")
+        if trial:
+            committed = committed_channel(git("show", "HEAD:settings.nix", capture=True).stdout)
+            state = "running until the next reboot" if trial_running() else "not running (rebooted since)"
+            say(f"This machine follows {committed} nixpkgs, and is trying {trial}: {state}.")
+            say(f"Keep it: agency channel {trial}. Undo: agency channel {committed}")
+        else:
+            say(f"This machine follows {channel()} nixpkgs ({channel_input()} in flake.nix).")
+            say("Switch with: agency channel stable|unstable [--test]")
         return
     ensure_repo()
-    if args.channel == current:
-        pending = [p for p in ("settings.nix", "flake.lock")
-                   if git("diff", "--quiet", "--", p, check=False).returncode != 0]
-        if not pending:
-            say(f"Already on {current}.")
-            return
-        # Left uncommitted by `agency channel {current} --test`: keep it.
-        if args.test:
-            say(f"Already trying {current}. Run `agency channel {current}` to keep it.")
-            return
-        rebuild()
-        commit(f"Follow {current} nixpkgs", *pending)
-        return
-    if uncommitted():
+    changed = git("status", "--porcelain", "--untracked-files=all", "--no-renames", "-z",
+                  capture=True).stdout.split("\0")
+    changed = {entry[3:] for entry in changed if entry}
+    if changed - {"settings.nix", "flake.lock"} or (changed and not trial):
         die("/etc/nixos has changes that are not committed. Commit them first.")
-    if args.channel == "stable":
+    committed = committed_channel(git("show", "HEAD:settings.nix", capture=True).stdout)
+    target = args.channel
+    if not trial and target == committed:
+        say(f"Already on {target}.")
+        return
+    if trial and target == committed:
+        # Undo the trial: back to what is committed.
+        say(f"Leaving the {trial} trial, back to {committed} ...")
+        git("checkout", "--", "settings.nix", "flake.lock")
+        rebuild("test" if args.test else "switch")
+        return
+    if target == "stable" and trial != "stable":
         say("Note: going back to stable moves packages to older versions. Most services")
         say("cope; a few (databases above all) refuse data written by a newer version.")
-    if read_setting("channel") is None:
-        # Machines installed before the setting existed: add it under timeZone.
-        text, n = re.subn(r"^(  timeZone = .*;)$", rf'\1\n  channel = "{args.channel}";',
-                          SETTINGS.read_text(), count=1, flags=re.M)
-        if n == 0:
-            die("settings.nix has no `timeZone = ...;` line to put `channel` under")
-        SETTINGS.write_text(text)
-    else:
-        write_setting("channel", json.dumps(args.channel))
-    lock_before = (REPO / "flake.lock").read_text()
-    system_before = output(["readlink", "-f", "/run/current-system"])
+    files = {p: (REPO / p).read_text() for p in ("settings.nix", "flake.lock")}
+    before = output(["readlink", "-f", "/run/current-system"])
+    mode = "test" if args.test else "switch"
     try:
-        # Lock the input if this checkout has never used it.
-        run(["nix", "flake", "lock", f"path:{REPO}"])
-        rebuild("test" if args.test else "switch")
-    except SystemExit:
-        if output(["readlink", "-f", "/run/current-system"]) == system_before:
-            # Nothing switched: put settings.nix back the way it was.
-            git("checkout", "--", "settings.nix", "flake.lock", check=False)
-        elif not args.test:
+        if target != trial:
+            write_setting("channel", json.dumps(target))
+            # The target input's pin has not moved while this machine followed
+            # the other channel (auto-update only updates the one in use).
+            say(f"Updating {channel_input()} ...")
+            run(["nix", "flake", "update", channel_input(), "--flake", f"path:{REPO}"])
+        rebuild(mode)
+    except BaseException:  # also Ctrl-C: never leave settings.nix half-switched
+        now = output(["readlink", "-f", "/run/current-system"])
+        if now == before:
+            for p, text in files.items():
+                (REPO / p).write_text(text)
+        elif mode == "switch" and now == output(["readlink", "-f", "/nix/var/nix/profiles/system"]):
             # The new system is running even though the switch reported a
             # problem, so settings.nix must say so. rebuild() has explained.
-            commit(f"Follow {args.channel} nixpkgs", "settings.nix", "flake.lock")
+            commit(f"Follow {target} nixpkgs", "settings.nix", "flake.lock")
         raise
     if args.test:
-        say(f"Running {args.channel} until the next reboot. To keep it: agency channel {args.channel}")
-        say(f"To undo now: git -C /etc/nixos checkout settings.nix flake.lock && agency rebuild")
+        say(f"Running {target} until the next reboot. Keep it: agency channel {target}")
+        say(f"Undo now: agency channel {committed}")
         return
-    paths = ["settings.nix"] + (["flake.lock"] if (REPO / "flake.lock").read_text() != lock_before else [])
-    commit(f"Follow {args.channel} nixpkgs", *paths)
+    commit(f"Follow {target} nixpkgs", "settings.nix", "flake.lock")
 
 
 def cmd_rollback(args):
