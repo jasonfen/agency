@@ -246,6 +246,30 @@ def uncommitted():
 SWITCH_UNIT = "nixos-rebuild-switch-to-configuration.service"
 
 
+def switch_running():
+    return output(["systemctl", "is-active", SWITCH_UNIT]) in ("active", "activating", "deactivating")
+
+
+def wait_for_switch(message):
+    """Wait until no system switch is running.
+
+    nixos-rebuild runs the switch itself as SWITCH_UNIT, so Ctrl-C or a
+    failed nixos-rebuild does not stop a switch that has started: it goes on
+    and changes /run/current-system later. Anything that reads what is
+    running after a rebuild fails must wait for it first.
+    """
+    if not switch_running():
+        return
+    say(message)
+    while True:
+        try:
+            while switch_running():
+                time.sleep(1)
+            return
+        except KeyboardInterrupt:
+            say("The switch cannot be stopped halfway. Still waiting for it to finish ...")
+
+
 def clear_switch_unit():
     """nixos-rebuild runs the switch as a transient unit with a fixed name.
 
@@ -253,11 +277,7 @@ def clear_switch_unit():
     was interrupted and its unit is still loaded, clear it, or this switch
     fails with "Unit ... was already loaded".
     """
-    state = output(["systemctl", "is-active", SWITCH_UNIT])
-    if state in ("active", "activating", "deactivating"):
-        say("Another system switch is running. Waiting for it to finish ...")
-        while output(["systemctl", "is-active", SWITCH_UNIT]) in ("active", "activating", "deactivating"):
-            time.sleep(3)
+    wait_for_switch("Another system switch is running. Waiting for it to finish ...")
     if output(["systemctl", "show", "-p", "LoadState", "--value", SWITCH_UNIT]) == "loaded":
         run(["sudo", "systemctl", "reset-failed", SWITCH_UNIT], check=False, capture=True)
         run(["sudo", "systemctl", "stop", SWITCH_UNIT], check=False, capture=True)
@@ -269,6 +289,7 @@ def rebuild(mode="switch"):
     before = output(["readlink", "-f", "/run/current-system"])
     result = run(["sudo", tool("nixos-rebuild"), mode, "--flake", FLAKE], check=False)
     if result.returncode != 0:
+        wait_for_switch("Waiting for the system switch to finish ...")
         now = output(["readlink", "-f", "/run/current-system"])
         if mode == "switch" and now != before and now == output(["readlink", "-f", "/nix/var/nix/profiles/system"]):
             die("the new system is running, but the switch reported a problem (see above).\n"
@@ -504,6 +525,8 @@ def cmd_channel(args):
             run(["nix", "flake", "update", channel_input(), "--flake", f"path:{REPO}"])
         rebuild(mode)
     except BaseException:  # also Ctrl-C: never leave settings.nix half-switched
+        # A switch that had started goes on without us; see what it ends on.
+        wait_for_switch("Stopping. The system switch had already started; waiting for it to finish ...")
         now = output(["readlink", "-f", "/run/current-system"])
         if now == before:
             for p, text in files.items():
