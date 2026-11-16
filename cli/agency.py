@@ -160,6 +160,16 @@ def setting_list(key):
     return re.findall(r'"([^"]*)"', read_setting(key) or "")
 
 
+def channel():
+    """The nixpkgs this machine follows: "stable" or "unstable" (settings.nix)."""
+    return setting_string("channel") or "stable"
+
+
+def channel_input():
+    """The flake input that `channel` selects (see flake.nix)."""
+    return "nixpkgs-unstable" if channel() == "unstable" else "nixpkgs"
+
+
 def nix_list(items):
     return "[ " + "".join(f'"{i}" ' for i in items) + "]"
 
@@ -328,7 +338,7 @@ def cmd_status(args):
         last = AUTO_UPDATE_LOG.read_text().strip()
     except OSError:
         last = "not run yet"
-    say(f"  updates    weekly nixpkgs update; last: {last}")
+    say(f"  updates    weekly nixpkgs ({channel()}) update; last: {last}")
     if uncommitted():
         notes.append("/etc/nixos has changes that are not committed.")
     if backups_on():
@@ -405,8 +415,8 @@ def cmd_auto_update(args):
     if uncommitted():
         record("skipped: /etc/nixos has uncommitted changes")
         return
-    say("Updating nixpkgs ...")
-    run(["nix", "flake", "update", "nixpkgs", "--flake", f"path:{REPO}"])
+    say(f"Updating nixpkgs ({channel()}) ...")
+    run(["nix", "flake", "update", channel_input(), "--flake", f"path:{REPO}"])
     if git("diff", "--quiet", "--", "flake.lock", check=False).returncode == 0:
         record("nixpkgs already up to date")
         return
@@ -418,6 +428,47 @@ def cmd_auto_update(args):
         raise
     commit("Update nixpkgs (weekly auto-update)", "flake.lock")
     record("updated nixpkgs and switched to it")
+
+
+def cmd_channel(args):
+    current = channel()
+    if not args.channel:
+        say(f"This machine follows {current} nixpkgs ({channel_input()} in flake.nix).")
+        say("Switch with: agency channel stable|unstable [--test]")
+        return
+    if args.channel == current:
+        say(f"Already on {current}.")
+        return
+    ensure_repo()
+    if uncommitted():
+        die("/etc/nixos has changes that are not committed. Commit them first.")
+    if args.channel == "stable":
+        say("Note: going back to stable moves packages to older versions. Most services")
+        say("cope; a few (databases above all) refuse data written by a newer version.")
+    if read_setting("channel") is None:
+        # Machines installed before the setting existed: add it under timeZone.
+        text, n = re.subn(r"^(  timeZone = .*;)$", rf'\1\n  channel = "{args.channel}";',
+                          SETTINGS.read_text(), count=1, flags=re.M)
+        if n == 0:
+            die("settings.nix has no `timeZone = ...;` line to put `channel` under")
+        SETTINGS.write_text(text)
+    else:
+        write_setting("channel", json.dumps(args.channel))
+    lock_before = (REPO / "flake.lock").read_text()
+    try:
+        # Lock the input if this checkout has never used it.
+        run(["nix", "flake", "lock", "--flake", f"path:{REPO}"])
+        rebuild("test" if args.test else "switch")
+    except SystemExit:
+        git("checkout", "--", "settings.nix", "flake.lock", check=False)
+        raise
+    if args.test:
+        say(f"Running {args.channel} until the next reboot. settings.nix is changed but not")
+        say("committed: `agency rebuild` keeps it; `git -C /etc/nixos checkout settings.nix flake.lock`")
+        say("then `agency rebuild` undoes it.")
+        return
+    paths = ["settings.nix"] + (["flake.lock"] if (REPO / "flake.lock").read_text() != lock_before else [])
+    commit(f"Follow {args.channel} nixpkgs", *paths)
 
 
 def cmd_rollback(args):
@@ -1176,6 +1227,10 @@ def main():
     sub.add_parser("rollback", help="go back to the previous system")
     sub.add_parser("auto-update", help="update nixpkgs and rebuild (what the weekly timer runs)")
 
+    p = sub.add_parser("channel", help="show or switch the nixpkgs this machine follows: stable or unstable")
+    p.add_argument("channel", nargs="?", choices=["stable", "unstable"])
+    p.add_argument("--test", action="store_true", help="only until the next reboot (a safe trial)")
+
     p = sub.add_parser("apps", help="list, add or remove optional software")
     p.add_argument("action", nargs="?", default="list", choices=["list", "add", "remove", "change"])
     p.add_argument("ids", nargs="*", metavar="id")
@@ -1221,6 +1276,7 @@ def main():
         "status": cmd_status,
         "update": cmd_update,
         "auto-update": cmd_auto_update,
+        "channel": cmd_channel,
         "rebuild": cmd_rebuild,
         "rollback": cmd_rollback,
         "apps": cmd_apps,
@@ -1234,7 +1290,7 @@ def main():
     }
     handlers[args.command](args)
     if args.command is None:
-        say("\nCommands: update, rebuild, rollback, apps, desktop, secret, backup, export, import, recovery-key. See: agency help")
+        say("\nCommands: update, rebuild, rollback, channel, apps, desktop, secret, backup, export, import, recovery-key. See: agency help")
 
 
 if __name__ == "__main__":

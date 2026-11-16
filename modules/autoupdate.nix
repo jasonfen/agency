@@ -1,5 +1,5 @@
-# Weekly package updates: newer nixpkgs from the stable channel in flake.nix,
-# built and switched to unattended. Only nixpkgs moves; the agency repo itself
+# Weekly package updates: newer nixpkgs from the channel settings.nix picks
+# (`channel`, stable by default), built and switched to unattended. Only nixpkgs moves; the agency repo itself
 # changes only when someone runs `agency update`. A failed build changes
 # nothing, the machine never reboots on its own (a new kernel waits for the
 # next reboot), and a clean, committed /etc/nixos is required so half-done
