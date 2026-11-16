@@ -34,6 +34,7 @@ const state = {
   signinOpen: "",
   termOpen: {},
   termAsked: {},
+  reveal: {},
   install: null,
   busy: false,
 };
@@ -41,6 +42,29 @@ const state = {
 const $ = (sel) => document.querySelector(sel);
 const esc = (s) => String(s).replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
 const icon = (id, cls = "") => `<svg class="${cls}" aria-hidden="true"><use href="#${id}"/></svg>`;
+
+// A password field with a button that shows what was typed. The keyboard
+// layout may not be the one printed on the keys, and a masked field hides
+// that. `state.reveal` keeps the choice across redraws.
+const password = (id, label) => `
+  <label for="${id}">${label}</label>
+  <input class="input" id="${id}" type="${state.reveal[id] ? "text" : "password"}" autocomplete="new-password" autocapitalize="off" spellcheck="false">
+  <button class="link" type="button" data-reveal="${id}">${state.reveal[id] ? "Hide password" : "Show password"}</button>`;
+
+function bindReveal() {
+  document.querySelectorAll("[data-reveal]").forEach((b) => {
+    b.onclick = () => {
+      const id = b.dataset.reveal;
+      state.reveal[id] = !state.reveal[id];
+      const el = document.getElementById(id);
+      el.type = state.reveal[id] ? "text" : "password";
+      b.textContent = state.reveal[id] ? "Hide password" : "Show password";
+    };
+  });
+}
+
+// Where firmware settings are changed: a BIOS, or a VM's settings.
+const firmware = () => state.info.vm ? "the VM's settings" : "the BIOS";
 
 async function api(path, body) {
   const res = await fetch("/api/" + path, body === undefined ? {} : {
@@ -61,24 +85,50 @@ function every(ms, fn) {
 
 const screens = {
   welcome() {
-    const { uefi, tpm } = state.info;
+    const { uefi, tpm, tpmVersion, vm } = state.info;
     if (!uefi || !tpm) {
       const what = !uefi
-        ? "This computer started in legacy mode. In the BIOS, turn off legacy or CSM boot so it starts in UEFI mode."
-        : "No TPM 2.0 chip was found. In the BIOS, turn it on. It is often called Security Device Support, Intel PTT or AMD fTPM.";
+        ? vm
+          ? "This VM started with BIOS firmware (SeaBIOS). In the VM's settings, choose UEFI (OVMF) firmware, with Secure Boot off."
+          : "This computer started in legacy mode. In the BIOS, turn off legacy or CSM boot so it starts in UEFI mode."
+        : tpmVersion === "1"
+          ? `TPM 1.2 found; agency needs TPM 2.0. Some computers can switch their TPM to 2.0 in ${firmware()}; most older ones cannot.`
+          : vm
+            ? "No TPM 2.0 was found. In the VM's settings, add a TPM 2.0 device (a vTPM)."
+            : "No TPM 2.0 chip was found. In the BIOS, turn it on. It is often called Security Device Support, Intel PTT or AMD fTPM.";
       return {
         html: `<h1>One setting to change first</h1>
           <p class="lede">${what}</p>
-          <p>Then start from the USB stick again. Nothing on this computer has been changed.</p>`,
+          <p>Then start from ${vm ? "the installer" : "the USB stick"} again. Nothing on this computer has been changed.</p>`,
         actions: [{ label: "Power off", primary: true, run: () => api("poweroff", {}) }],
       };
     }
+    // The keyboard layout. Choosing one restarts the screen (the server
+    // explains why), which brings this page back with it in use.
+    const { keyboard, keyboards } = state.info;
+    const layouts = keyboards.some((k) => k.id === keyboard) ? keyboards : [{ id: keyboard, label: keyboard }, ...keyboards];
     return {
       html: `<h1>A computer for your agents</h1>
         <p class="lede">agency turns this computer into one that AI agents run. They get full control of it and a desktop of their own, and you check in from your laptop or phone.</p>
         <p>Setup takes about ten minutes. Installing erases one disk. You choose which, and nothing is changed until you confirm on the last screen.</p>
-        ${icon("pointer", "hero")}`,
-      actions: [{ label: "Begin", primary: true, run: () => show("network") }],
+        <div class="field">
+          <label for="keyboard">Keyboard</label>
+          <select class="input" id="keyboard" ${state.busy ? "disabled" : ""}>${layouts.map((k) =>
+            `<option value="${esc(k.id)}" ${k.id === keyboard ? "selected" : ""}>${esc(k.label)}</option>`).join("")}</select>
+          <input class="input" id="keyboard-test" placeholder="Type here to try it" aria-label="Try the keyboard" autocomplete="off" autocapitalize="off" spellcheck="false">
+          ${state.busy ? `<span class="small muted">Switching the keyboard. The screen starts again in a moment.</span>` : ""}
+        </div>`,
+      actions: [{ label: "Begin", primary: true, disabled: state.busy, run: () => show("network") }],
+      bind() {
+        $("#keyboard").onchange = async (e) => {
+          const before = state.info.keyboard;
+          state.info.keyboard = e.target.value;
+          state.busy = true;
+          redraw();
+          const res = await api("keyboard", { layout: e.target.value });
+          if (!res.ok) { state.info.keyboard = before; state.busy = false; redraw(); }
+        };
+      },
     };
   },
 
@@ -101,28 +151,37 @@ const screens = {
         : net.online
           ? "Optional. Join a network now if this computer will run without the cable."
           : "";
-      const picked = state.ssid || net.ssid || state.wifi?.[0]?.ssid || "";
+      // OTHER: a hidden network, typed in by name.
+      const picked = state.ssid || net.ssid || state.wifi?.[0]?.ssid || OTHER;
+      const chosen = state.wifi?.find((n) => n.ssid === picked);
+      const row = (value, name, aside) => `
+              <label class="choice">
+                <input type="radio" name="ssid" value="${esc(value)}" ${value === picked ? "checked" : ""}>
+                ${icon("pointer", "mark")}
+                <span class="name">${name}</span>
+                <span class="aside">${aside}</span>
+              </label>`;
+      const fields = chosen?.enterprise
+        ? `<div class="notice">${esc(chosen.ssid)} uses WPA-Enterprise (a username as well as a password), which this screen cannot join. Press Ctrl+Alt+F2 and join it there with <code>nmcli</code>, then come back with Ctrl+Alt+F1:
+            <p class="code small" style="margin-top: var(--s1)">sudo nmcli connection add type wifi con-name work ssid '${esc(chosen.ssid)}' wifi-sec.key-mgmt wpa-eap 802-1x.eap peap 802-1x.phase2-auth mschapv2 802-1x.identity USER 802-1x.password PASSWORD<br>sudo nmcli connection up work</p></div>`
+        : `${picked === OTHER ? `<div class="field">
+              <label for="wifi-ssid">Network name</label>
+              <input class="input" id="wifi-ssid" autocomplete="off" autocapitalize="off" spellcheck="false">
+            </div>` : ""}
+            <div class="field">${password("wifi-pass", "Wi-Fi password")}</div>`;
       const list = state.wifi === null
         ? `<p class="muted">Looking for Wi-Fi networks.</p>`
-        : state.wifi.length === 0
-          ? `<p class="muted">No Wi-Fi networks found.</p>`
-          : `<div class="choices" role="radiogroup" aria-label="Wi-Fi networks">${state.wifi.map((n) => `
-              <label class="choice">
-                <input type="radio" name="ssid" value="${esc(n.ssid)}" ${n.ssid === picked ? "checked" : ""}>
-                ${icon("pointer", "mark")}
-                <span class="name">${esc(n.ssid)}</span>
-                <span class="aside">${n.ssid === net.ssid ? "joined" : n.secure ? "password" : "open"}</span>
-              </label>`).join("")}</div>
-            <div class="field">
-              <label for="wifi-pass">Wi-Fi password</label>
-              <input class="input" id="wifi-pass" type="password" autocomplete="new-password">
-            </div>`;
+        : `${state.wifi.length === 0 ? `<p class="muted">No Wi-Fi networks found.</p>` : ""}
+            <div class="choices" role="radiogroup" aria-label="Wi-Fi networks">${state.wifi.map((n) =>
+              row(n.ssid, esc(n.ssid), n.ssid === net.ssid ? "joined" : n.enterprise ? "enterprise" : n.secure ? "password" : "open")).join("")}
+              ${row(OTHER, "Other network…", "hidden")}</div>
+            ${fields}`;
       wifi = `<h2>Wi-Fi</h2>
         ${hint ? `<p class="muted">${hint}</p>` : ""}
         ${state.wifiError ? `<div class="notice notice--bad">${esc(state.wifiError)}</div>` : ""}
         ${list}
         <p style="margin-top: var(--s2); display: flex; gap: var(--s2)">
-          ${state.wifi?.length ? `<button class="button" id="wifi-join">${state.busy ? "Joining" : "Join network"}</button>` : ""}
+          ${state.wifi !== null && !chosen?.enterprise ? `<button class="button" id="wifi-join">${state.busy ? "Joining" : "Join network"}</button>` : ""}
           ${state.wifi !== null ? `<button class="button button--quiet" id="wifi-scan">Look again</button>` : ""}
         </p>`;
     } else if (net && !net.online) {
@@ -157,20 +216,26 @@ const screens = {
       },
       bind() {
         document.querySelectorAll("input[name=ssid]").forEach((el) => {
-          el.onchange = () => { state.ssid = el.value; };
+          el.onchange = () => { state.ssid = el.value; redraw(); };
         });
         const scan = $("#wifi-scan");
         if (scan) scan.onclick = () => state.scanWifi();
         const join = $("#wifi-join");
         if (join) join.onclick = async () => {
-          const ssid = document.querySelector("input[name=ssid]:checked")?.value;
+          const value = document.querySelector("input[name=ssid]:checked")?.value;
+          const hidden = value === OTHER;
+          const ssid = hidden ? $("#wifi-ssid").value.trim() : value;
           if (!ssid || state.busy) return;
           state.busy = true;
           redraw();
-          const res = await api("wifi", { ssid, password: $("#wifi-pass").value });
+          const res = await api("wifi", { ssid, password: $("#wifi-pass").value, hidden });
           state.busy = false;
           state.wifiError = res.ok ? "" : res.error;
-          if (res.ok) { $("#wifi-pass").value = ""; state.net = await api("network"); }
+          if (res.ok) {
+            $("#wifi-pass").value = "";
+            if (hidden) { state.ssid = ""; state.wifi = (await api("wifi")).networks; }
+            state.net = await api("network");
+          }
           redraw();
           // Once joined, Enter should mean Continue, not join again.
           if (res.ok) $("#actions [data-main]")?.focus();
@@ -180,26 +245,29 @@ const screens = {
   },
 
   access() {
+    // The tailnet knows this computer by the name it had when Tailscale
+    // connected, so the name cannot change after that.
+    const locked = state.tailscale.state === "connected";
     return {
       html: `<h1>Name and login</h1>
         <p class="lede">Give this computer a name. You log in over SSH with the keys on your GitHub account. The password is for this computer's own screen.</p>
         <div class="field">
           <label for="machine-name">Name of this computer</label>
-          <input class="input" id="machine-name" value="${esc(state.name)}" autocomplete="off" autocapitalize="off" spellcheck="false">
-          <span class="small muted">You will reach it as <code>${esc(state.info.user)}@name</code>.</span>
+          <input class="input" id="machine-name" value="${esc(state.name)}" autocomplete="off" autocapitalize="off" spellcheck="false" ${locked ? "readonly" : ""}>
+          <span class="small muted">${locked
+            ? "Tailscale is connected under this name, so it stays."
+            : `You will reach it as <code>${esc(state.info.user)}@name</code>.`}</span>
         </div>
         <div class="field">
           <label for="gh-user">GitHub username</label>
           <input class="input" id="gh-user" value="${esc(state.user)}" autocomplete="off" autocapitalize="off" spellcheck="false">
         </div>
         <div class="field">
-          <label for="pw1">Password</label>
-          <input class="input" id="pw1" type="password" autocomplete="new-password">
+          ${password("pw1", "Password")}
           <span class="small muted">8 or more characters. To use it, press Ctrl+Alt+F2 on this computer.</span>
         </div>
         <div class="field">
-          <label for="pw2">Password again</label>
-          <input class="input" id="pw2" type="password" autocomplete="new-password">
+          ${password("pw2", "Password again")}
         </div>
         ${state.accessError ? `<div class="notice notice--bad">${esc(state.accessError)}</div>` : ""}`,
       actions: [
@@ -226,24 +294,28 @@ const screens = {
           },
         },
       ],
-      focus: "#machine-name",
+      focus: locked ? "#gh-user" : "#machine-name",
     };
   },
 
   disk() {
     const rows = state.disks.map((d) => `
       <label class="choice">
-        <input type="radio" name="disk" value="${esc(d.path)}" ${d.path === state.disk ? "checked" : ""}>
+        <input type="radio" name="disk" value="${esc(d.path)}" ${d.path === state.disk ? "checked" : ""} ${d.small ? "disabled" : ""}>
         ${icon("pointer", "mark")}
-        <span><span class="name">${esc(d.model)}</span><br><span class="detail">${esc(d.size)}, ${esc(d.kind)}</span></span>
+        <span><span class="name">${esc(d.model)}</span><br><span class="detail">${esc(d.size)}, ${esc(d.kind)}${d.small ? ". Too small: agency needs 20 GB or more." : ""}</span></span>
         <span class="aside">${esc(d.path)}</span>
       </label>`).join("");
+    const none = `<div class="notice notice--bad"><strong>No internal disk was found.</strong>
+      If ${firmware()} has the SATA or storage mode set to RAID or Intel RST, switch it to AHCI, then start from the USB stick again.</div>`;
     return {
       html: `<h1>Disk</h1>
         <p class="lede">Choose the disk to install on. Everything on it will be erased when you confirm on the last screen.</p>
         ${state.disks.length
           ? `<div class="choices" role="radiogroup" aria-label="Disks">${rows}</div>`
-          : `<div class="notice notice--bad">No internal disk was found.</div>`}`,
+          : none}
+        ${state.disks.length && state.disks.every((d) => d.small)
+          ? `<div class="notice notice--bad">No disk here is large enough. agency needs a disk of 20 GB or more.</div>` : ""}`,
       actions: [
         { label: "Back", run: () => show("access") },
         { label: "Continue", primary: true, disabled: !state.disk, run: () => show("tailscale") },
@@ -252,7 +324,8 @@ const screens = {
         const res = await api("disks");
         state.disks = res.disks;
         state.earlier = res.earlier;
-        if (!state.disks.some((d) => d.path === state.disk)) state.disk = state.disks[0]?.path || "";
+        const usable = state.disks.filter((d) => !d.small);
+        if (!usable.some((d) => d.path === state.disk)) state.disk = usable[0]?.path || "";
         redraw();
       },
       bind() {
@@ -385,10 +458,7 @@ const screens = {
         { label: "Back", run: () => show("signin") },
         {
           label: "Erase disk and install", danger: true,
-          async run() {
-            await api("install", { name: state.name, disk: state.disk, user: state.user, apps: [...state.apps], password: state.password });
-            show("installing");
-          },
+          run: () => startInstall(false),
         },
       ],
     };
@@ -401,10 +471,25 @@ const screens = {
     const cells = Array.from({ length: 32 }, (_, i) =>
       `<i style="--i:${i}" class="${copying && i < lit ? "is-on" : ""}"></i>`).join("");
     if (st.state === "failed") {
+      const log = `<p class="logline" style="white-space: pre-wrap">${esc(st.log.slice(-12).join("\n"))}</p>
+        <p class="small muted" style="margin-top: var(--s2)">The full log is <code>${esc(st.logFile)}</code>; press Ctrl+Alt+F2 to read it.</p>`;
+      if (st.tpmFailed) {
+        // A TPM that refuses once refuses again, so offer to go without.
+        return {
+          html: `<h1>The TPM did not accept the disk key</h1>
+            <p class="lede">This computer has a TPM, but it refused to store the key that unlocks the disk. Trying again gives the same result.</p>
+            <p>Clearing the TPM in ${firmware()} may fix it. Or install without it: the disk is still encrypted, but it asks for the recovery key every time the computer starts, so someone has to type it in.</p>
+            ${log}`,
+          actions: [
+            { label: "Back to review", run: () => show("review") },
+            { label: "Install with the recovery key only", danger: true, run: () => startInstall(true) },
+          ],
+        };
+      }
       return {
         html: `<h1>The install stopped</h1>
           <div class="notice notice--bad"><strong>${esc(st.error)}</strong></div>
-          <p class="logline" style="white-space: pre-wrap">${esc(st.log.slice(-6).join("\n"))}</p>`,
+          ${log}`,
         actions: [{ label: "Back to review", primary: true, run: () => show("review") }],
       };
     }
@@ -447,6 +532,7 @@ const screens = {
           ${ts ? `<div><span class="muted">From anywhere</span><code>ssh ${esc(user)}@${esc(hostname)}</code></div>` : ""}
         </div>
         <p class="small muted" style="margin-top: var(--s1)">The apps you chose finish installing in the background after the first start.</p>
+        ${st.noTpm ? `<div class="notice"><strong>The disk is not bound to the TPM.</strong> Each time this computer starts, it asks for the recovery key below before anything else runs.</div>` : ""}
         ${st.recoveryKey ? `
         <h2>Disk recovery key</h2>
         <div class="scan" style="margin-top: var(--s1)">
@@ -460,6 +546,15 @@ const screens = {
     };
   },
 };
+
+// The Wi-Fi list's "Other network" entry. Longer than any network name
+// can be (32 bytes), so it never matches a real one.
+const OTHER = "agency: other network, typed in by name";
+
+async function startInstall(noTpm) {
+  await api("install", { name: state.name, disk: state.disk, user: state.user, apps: [...state.apps], password: state.password, noTpm });
+  show("installing");
+}
 
 async function pollTailscale() {
   every(1500, async () => {
@@ -672,6 +767,7 @@ function redraw() {
   for (const [id, value] of Object.entries(typed)) { const el = document.getElementById(id); if (el) el.value = value; }
   drawActions();
   current.bind?.();
+  bindReveal();
   if (focused) document.getElementById(focused)?.focus();
 }
 
@@ -684,6 +780,7 @@ function show(name) {
   drawRail();
   drawActions();
   current.bind?.();
+  bindReveal();
   current.enter?.();
   const target = current.focus ? $(current.focus) : $("#actions [data-main]");
   target?.focus();

@@ -44,6 +44,11 @@ in
   time.timeZone = settings.timeZone;
   i18n.defaultLocale = "en_US.UTF-8";
 
+  # The keyboard chosen in setup, on the console and at the disk prompt at
+  # boot (the systemd initrd takes the console keymap along).
+  services.xserver.xkb.layout = settings.keyboard or "us";
+  console.useXkbConfig = (settings.keyboard or "us") != "us";
+
   # A machine with its own hardware file logs in with the keys in
   # settings.nix only: the installer, which fetches them from GitHub, never ran.
   warnings = lib.optional (hasLocal && settings.sshKeys == [ ])

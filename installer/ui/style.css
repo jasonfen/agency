@@ -280,3 +280,8 @@ code, .code { font-family: var(--font-code); font-size: 0.95em; user-select: tex
 }
 .link:hover { color: var(--ink); }
 .account [hidden] { display: none; }
+
+/* A disk that cannot be chosen (too small). */
+.choice:has(input:disabled) { cursor: default; color: var(--muted); }
+.choice:has(input:disabled):hover { background: transparent; }
+.field .link { justify-self: start; }

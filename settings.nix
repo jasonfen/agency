@@ -1,8 +1,8 @@
 # Every value that differs from one machine to the next lives in this file.
 #
 # The installer's setup screen asks for most of these and rewrites the
-# `hostName`, `githubUser` and `apps` lines on the installed machine, so
-# keep each of those three on a single line.
+# `hostName`, `keyboard`, `githubUser` and `apps` lines on the installed
+# machine, so keep each of those four on a single line.
 {
   # Name of the machine. It is reachable as <hostName>.local on the LAN and
   # as <hostName> on your tailnet. Empty: setup asks for one.
@@ -12,6 +12,10 @@
   user = "agent";
 
   timeZone = "UTC";
+
+  # Keyboard layout, by its XKB name ("us", "de", "fr", "gb" ...), for the
+  # machine's own screen and the disk prompt at boot.
+  keyboard = "us";
 
   # Which nixpkgs the system is built from. "stable" (nixos-26.05) only gets
   # fixes until the next release; "unstable" (nixos-unstable) has the newest
