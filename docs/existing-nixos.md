@@ -2,10 +2,10 @@
 
 ## Try it in a virtual machine
 
-On any x86-64 Linux with Nix and KVM, this starts agency in a window, with nothing to install:
+On any x86-64 Linux with Nix and KVM, this starts agency in a window, with nothing to install. The first run downloads a few GB:
 
 ```sh
-nix run github:makors/agency#vm
+nix --extra-experimental-features 'nix-command flakes' run github:makors/agency#vm
 ```
 
 The window shows the machine's own screen. Log in from another terminal, with the password `agency`:
@@ -66,3 +66,12 @@ This makes the whole machine an agency machine. It gets an `agent` account with 
 Then `ssh agent@<hostName>`, and the rest is as on an installed machine: `agency update` keeps your commit on top of the newest agency, and agents change the system by editing `/etc/nixos`.
 
 What you do not get this way is what the installer sets up on the disk: encryption unlocked by the TPM, and the btrfs layout. Whatever your disk has, it keeps.
+
+To go back to your old configuration, put it back and switch to it:
+
+```sh
+sudo rm -rf /etc/nixos && sudo mv /etc/nixos.old /etc/nixos
+sudo nixos-rebuild switch   # add --flake /etc/nixos#<name> if it was a flake
+```
+
+To go back for one boot only, pick an entry from before agency in the boot menu.

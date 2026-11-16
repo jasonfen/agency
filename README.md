@@ -27,10 +27,11 @@ You need an x86-64 laptop or PC with UEFI and TPM 2.0, a USB stick, and an SSH k
 2. In the laptop's BIOS, turn Secure Boot off and TPM on.
 3. Boot from the stick and answer the setup screen.
 
-Then log in with the name you gave it:
+Then log in with the name you gave it, here `agency`:
 
 ```sh
-ssh agent@agency
+ssh agent@agency.local   # on the same network
+ssh agent@agency         # over Tailscale
 ```
 
 [docs/install.md](docs/install.md) has the details, including a stick that installs without asking anything.
@@ -38,7 +39,7 @@ ssh agent@agency
 No spare computer? Try it in a virtual machine, on Linux with Nix:
 
 ```sh
-nix run github:makors/agency#vm
+nix --extra-experimental-features 'nix-command flakes' run github:makors/agency#vm
 ```
 
 That, and running agency on a machine that already has NixOS, is in [docs/existing-nixos.md](docs/existing-nixos.md).

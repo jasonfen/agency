@@ -19,7 +19,7 @@ import { githubUrl, useRelease } from '@/release'
 import { track } from '@/analytics'
 
 const flashCommand = 'curl -fsSL https://agency.makors.xyz/flash | sh'
-const sshCommand = 'ssh agent@agency'
+const sshCommand = 'ssh agent@agency.local'
 const desktopUrl = 'http://agency:6081/vnc.html'
 
 const questions = ['Network', 'Name and GitHub user', 'Disk to erase', 'Tailscale', 'Apps']

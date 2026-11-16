@@ -74,6 +74,18 @@ agency sends a few anonymous events to PostHog, so we can count how many sticks 
 
 The ID is random for each run, and nothing else goes with them: no names, keys or addresses. Set `DO_NOT_TRACK=1` to turn them off (`curl -fsSL https://agency.makors.xyz/flash | DO_NOT_TRACK=1 sh`, or `sudo DO_NOT_TRACK=1 agency-install` on the stick).
 
+## If something goes wrong
+
+- **The stick doesn't boot.** Turn off legacy/CSM boot and Secure Boot. If you wrote it with Rufus, write it again in DD Image mode.
+- **The install stops.** The screen says why. The full log is `/tmp/agency-setup/install.log` on the stick's system (Ctrl+Alt+F2).
+- **The machine asks for a disk password at boot.** The TPM no longer recognizes it, usually after a BIOS update or a change to Secure Boot. Type the recovery key, then bind the disk to the TPM again:
+
+  ```sh
+  sudo systemd-cryptenroll --wipe-slot=tpm2 --tpm2-device=auto --tpm2-pcrs=7 /dev/disk/by-partlabel/disk-main-luks
+  ```
+
+- **Something else.** [Open an issue](https://github.com/makors/agency/issues/new) with the computer's model and what you saw.
+
 ## Limits
 
 - Secure Boot must be off. TPM unlock protects the data if the disk is removed, but not if someone boots another OS on the machine.
