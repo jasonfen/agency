@@ -19,6 +19,7 @@ The stick boots into a setup screen on the laptop's own display. It works with t
 2. **Name and login.** A name for the machine, your GitHub username, and a password for the machine's own screen (Ctrl+Alt+F2). SSH still uses your keys.
 3. **Disk.** Pick the disk to erase from a list showing size and model.
 4. **Tailscale.** Optional. A QR code appears; scan it with your phone and approve the device. The sign-in is carried over to the installed system.
+   The machine joins with [Tailscale SSH](https://tailscale.com/kb/1193/tailscale-ssh) on, so over Tailscale your tailnet policy decides who may log in, not your GitHub keys. The default policy lets you into your own devices but asks for a browser check every 12 hours, which agents logging in from another machine cannot answer; the rule under [If something goes wrong](#if-something-goes-wrong) skips it.
 5. **Apps.** Pick agents (Claude Code, Codex and others) and tools (browser, Docker and so on). The list comes from [`apps.nix`](../apps.nix).
 6. **Sign in.** Optional. GitHub, and Codex if you picked it: scan the code with your phone and type the short code it shows. Claude Code and OpenCode sign in later from the dashboard.
 
@@ -84,6 +85,21 @@ The ID is random for each run, and nothing else goes with them: no names, keys o
   ```sh
   sudo systemd-cryptenroll --wipe-slot=tpm2 --tpm2-device=auto --tpm2-pcrs=7 /dev/disk/by-partlabel/disk-main-luks
   ```
+
+- **SSH over Tailscale says `tailnet policy does not permit you to SSH to this node`.** Your tailnet policy has no `ssh` rule for the machine, which happens once the default policy has been replaced. Add one in the [policy file](https://login.tailscale.com/admin/acls/file), inside its outer braces. This one lets you into the devices you own, without a browser check that would lock agents out:
+
+  ```json
+  "ssh": [
+    {
+      "action": "accept",
+      "src": ["autogroup:member"],
+      "dst": ["autogroup:self"],
+      "users": ["autogroup:nonroot", "root"]
+    }
+  ]
+  ```
+
+  `ssh agent@<name>.local` on the same network still works with your keys meanwhile.
 
 - **Something else.** [Open an issue](https://github.com/makors/agency/issues/new) with the computer's model and what you saw.
 
