@@ -158,6 +158,56 @@
     };
   }
   {
+    id = "rex";
+    label = "Rex server";
+    group = "Development";
+    description = "Superlogical's terminal multiplexer for agents, whose sessions outlive the window. To connect from Rex for Mac, choose Add Remote Host and enter ssh://${settings.user}@<this machine>.";
+    system = {
+      environment.systemPackages = [ pkgs.superlogical-rex ];
+
+      # The personal server of the agent account, kept running (the account
+      # lingers), so sessions survive the last client leaving. The unit is
+      # the one Rex's home-manager module writes. With no --listen it takes
+      # the socket in $XDG_RUNTIME_DIR that every `rex` command looks for,
+      # so SSH clients reach it and need no open port.
+      systemd.user.services.rex = {
+        description = "Rex server";
+        documentation = [ "https://www.superlogical.com/rex/docs" ];
+        wantedBy = [ "default.target" ];
+        unitConfig.ConditionUser = settings.user;
+        # A restart ends every session, so a rebuild leaves it running the
+        # old version: systemctl --user restart rex when ready.
+        restartIfChanged = false;
+        environment = {
+          # Programs in a Rex terminal (TERM=xterm-rex) look it up here; the
+          # empty element keeps the usual entries.
+          TERMINFO_DIRS = "${pkgs.superlogical-rex}/share/terminfo:";
+          REX_CGROUP_DELEGATED = "1";
+        };
+        serviceConfig = {
+          Type = "notify";
+          NotifyAccess = "main";
+          ExecStart = "${pkgs.superlogical-rex}/bin/rex server run";
+          Restart = "on-failure";
+          RestartSec = "5s";
+          # SIGTERM to the server alone, which saves its sessions first.
+          KillMode = "mixed";
+          # One terminal running out of memory doesn't take the rest down.
+          OOMPolicy = "continue";
+          OOMScoreAdjust = 0;
+          Delegate = true;
+          DelegateSubgroup = "server";
+        };
+      };
+
+      # ssh from a Rex terminal announces xterm-256color to hosts that lack
+      # Rex's terminfo entry.
+      programs.ssh.extraConfig = ''
+        Include ${pkgs.superlogical-rex}/share/rex/ssh_config.d/50-rex.conf
+      '';
+    };
+  }
+  {
     id = "flatpak";
     label = "Flatpak";
     group = "Development";

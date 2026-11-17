@@ -18,6 +18,14 @@
       url = "github:Mic92/sops-nix";
       inputs.nixpkgs.follows = "nixpkgs";
     };
+
+    # Rex, Superlogical's terminal multiplexer, for the `rex` app. Its own
+    # flake of the prebuilt binary; the preview channel, since stable has no
+    # release yet. `nix flake update rex` moves to the newest preview.
+    rex = {
+      url = "https://pkgs.superlogical.com/rex/nix/preview.tar.gz";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
   };
 
   outputs =
@@ -27,6 +35,7 @@
       nixpkgs-unstable,
       disko,
       sops-nix,
+      rex,
       ...
     }:
     let
@@ -54,6 +63,9 @@
         modules = [
           disko.nixosModules.disko
           sops-nix.nixosModules.sops
+          # pkgs.superlogical-rex, for apps.nix. Not pkgs.rex: nixpkgs
+          # already has a Rex, an unrelated Perl deployment tool.
+          { nixpkgs.overlays = [ (final: prev: { superlogical-rex = rex.packages.${system}.rex; }) ]; }
           ./hosts/agency
         ];
       };
