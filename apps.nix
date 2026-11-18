@@ -314,27 +314,10 @@
     id = "blender";
     label = "Blender";
     group = "Graphics and media";
-    description = "3D modelling and rendering. Best driven by script (blender -b -P script.py); renders on the CPU.";
+    description = "3D modelling and rendering, always the newest stable release from blender.org. Best driven by script (blender -b -P script.py); renders on the CPU.";
     system = {
-      environment.systemPackages = [ pkgs.blender ];
-      # Blender's OSL (Cycles shaders) links its own libLLVM and
-      # libclang-cpp, and Mesa's llvmpipe links another. Two LLVM versions
-      # in one process clash: llvmpipe's shader compiler calls into the
-      # wrong one and Blender segfaults as soon as it opens a window. Build
-      # OSL with Mesa's LLVM so there is only one. Whatever llvmPackages_*
-      # argument OSL takes is replaced, so this survives a nixpkgs bump.
-      nixpkgs.overlays = [
-        (final: prev: {
-          openshadinglanguage =
-            let
-              args = builtins.attrNames (prev.lib.functionArgs prev.openshadinglanguage.override);
-              llvmArgs = builtins.filter (prev.lib.hasPrefix "llvmPackages") args;
-            in
-            prev.openshadinglanguage.override (
-              prev.lib.genAttrs llvmArgs (_: final.mesa.llvmPackages)
-            );
-        })
-      ];
+      # The official build, always the newest stable release; see the file.
+      environment.systemPackages = [ (pkgs.callPackage ./pkgs/blender.nix { }) ];
     };
   }
   {
