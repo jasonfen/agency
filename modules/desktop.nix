@@ -247,15 +247,20 @@ let
   # http://, where the page loads but browsers refuse to decode the video.
   serve = pkgs.writeShellScript "agency-desktops-serve" ''
     set -u
-    if [ "$(tailscale status --json 2>/dev/null | jq -r '.BackendState // empty')" != Running ]; then
+    status=$(tailscale status --json 2>/dev/null || echo '{}')
+    name=$(printf '%s' "$status" | jq -r '.Self.DNSName // empty' | sed 's/\.$//')
+    if [ "$(printf '%s' "$status" | jq -r '.BackendState // empty')" != Running ] || [ -z "$name" ]; then
       echo "Tailscale is not connected yet; trying again later."
       exit 0
     fi
     served=$(tailscale serve status --json 2>/dev/null || echo '{}')
     is_served() { printf '%s' "$served" | jq -e --arg p "$1" '(.TCP // {})[$p] != null' >/dev/null; }
+    # Served under this machine's current name? After a rename the port
+    # stays served under the old name only, and its HTTPS fails for the new.
+    is_served_here() { printf '%s' "$served" | jq -e --arg k "$name:$1" '(.Web // {})[$k] != null' >/dev/null; }
     for n in $(seq 1 ${toString count}); do
       port=$((6080 + n))
-      is_served $port && continue
+      is_served_here $port && continue
       if timeout 20 tailscale serve --bg --yes --https=$port http://127.0.0.1:$port; then
         echo "Desktop :$n is at https on port $port"
       elif timeout 20 tailscale serve --bg --yes --http=$port http://127.0.0.1:$port; then
