@@ -74,9 +74,14 @@ function cardStatus(a) {
 function cardSignin(a) {
   if (!a.on || a.account || !a.signin) return "";
   return `<div class="app-signin">
-    <span class="app-signin-label">Sign in</span>
-    <code class="app-signin-cmd">${esc(a.signin)}</code>
-    <button type="button" class="button app-copy" data-copy="${esc(a.signin)}" aria-label="Copy the sign-in command">Copy</button>
+    <p class="app-signin-label">Sign in from a terminal</p>
+    <div class="app-signin-box">
+      <code class="app-signin-cmd">${esc(a.signin)}</code>
+      <button type="button" class="app-copy" data-copy="${esc(a.signin)}" aria-label="Copy" title="Copy">
+        <svg class="icon-copy" viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><path d="M5 5V2h9v9h-3M2 5h9v9H2z" fill="none" stroke="currentColor" stroke-width="1.5"/></svg>
+        <svg class="icon-done" viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><path d="M2.5 8.5l3.5 3.5 7.5-8" fill="none" stroke="currentColor" stroke-width="2"/></svg>
+      </button>
+    </div>
   </div>`;
 }
 
@@ -211,13 +216,15 @@ document.addEventListener("click", async (ev) => {
     return enqueue(t.dataset.undo, null);
   }
   if (t.dataset.copy) {
+    let ok = true;
     try {
       await navigator.clipboard.writeText(t.dataset.copy);
-      t.textContent = "Copied";
     } catch {
-      t.textContent = "Select it";
+      ok = false; // not https, or not allowed: the command selects on a click
     }
-    setTimeout(() => { t.textContent = "Copy"; }, 1500);
+    t.classList.toggle("is-copied", ok);
+    t.title = ok ? "Copied" : "Select the command to copy it";
+    setTimeout(() => { t.classList.remove("is-copied"); t.title = "Copy"; }, 1500);
     return;
   }
   switch (t.dataset.action) {
