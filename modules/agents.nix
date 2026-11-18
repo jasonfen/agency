@@ -74,6 +74,11 @@ in
 
   environment.systemPackages = with pkgs; [
     # shell basics
+    # Plain coreutils over NixOS's default coreutils-full, which links
+    # OpenSSL into every `ls`, `cat` and `true`: 0.42 ms per start instead
+    # of 0.73 ms, and agents start a lot of them. Only sha256sum and friends
+    # get slower on large files.
+    coreutils
     tmux
     curl
     wget
