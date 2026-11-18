@@ -79,6 +79,88 @@
     npm = "@ampcode/cli";
     signin = "amp login";
   }
+  {
+    id = "devin";
+    label = "Devin CLI";
+    group = "Agents";
+    description = "Cognition's coding agent for the terminal. T3 Code runs it too, signed in as the same account.";
+    signin = "devin auth login --force-manual-token-flow";
+    system =
+      let
+        home = "/home/${settings.user}";
+      in
+      {
+        # Cognition ships Devin CLI only through its install script, into
+        # ~/.local/bin, where it updates itself; like the npm apps, it is
+        # installed into the agent account rather than by Nix. Its binary
+        # runs through nix-ld. This checks at boot, and after a rebuild,
+        # that it is there, and installs it if not. `agency apps remove
+        # devin` stops checking; ~/.local/bin/devin stays until deleted.
+        #
+        # It also adds Devin to T3 Code as an ACP provider (acp_devin) that
+        # runs this same binary, so T3 Code uses the account `devin auth
+        # login` signed in, rather than downloading a second copy. An
+        # acp_devin a person already set up is left as it is.
+        # Watch it with: journalctl -u agency-devin
+        systemd.services.agency-devin = {
+          description = "Install Devin CLI and add it to T3 Code";
+          wantedBy = [ "multi-user.target" ];
+          after = [
+            "network-online.target"
+            "agency-firstboot.service"
+            "agency-npm-apps.service"
+          ];
+          wants = [ "network-online.target" ];
+          path = with pkgs; [
+            bash
+            curl
+            coreutils
+            gnutar
+            gzip
+            unzip
+            gnugrep
+            gnused
+            findutils
+            which
+            jq
+            util-linux
+          ];
+          serviceConfig = {
+            Type = "exec";
+            RemainAfterExit = true;
+            Restart = "on-failure";
+            RestartSec = 60;
+          };
+          script = ''
+            as_user() {
+              runuser -u ${settings.user} -- env HOME=${home} \
+                PATH=${home}/.local/bin:$PATH ${pkgs.runtimeShell} -c "$1"
+            }
+
+            if [ ! -x ${home}/.local/bin/devin ]; then
+              until curl -fsS --max-time 10 -o /dev/null https://cli.devin.ai/install.sh; do
+                sleep 5
+              done
+              echo "Installing Devin CLI"
+              as_user "curl -fsSL https://cli.devin.ai/install.sh | bash"
+            fi
+
+            # T3 Code's settings, which it reloads when they change.
+            t3=${home}/.t3/userdata/settings.json
+            if [ -d ${home}/.t3 ] || ${if builtins.elem "t3code" settings.apps then "true" else "false"}; then
+              as_user "mkdir -p ${home}/.t3/userdata && { [ -s $t3 ] || echo '{}' >$t3; }"
+              if ! jq -e '.providerInstances.acp_devin' $t3 >/dev/null; then
+                echo "Adding Devin to T3 Code"
+                as_user "jq '.providerInstances.acp_devin = {
+                    driver: \"acpRegistry\",
+                    config: { agentId: \"devin\", commandPath: \"${home}/.local/bin/devin\" }
+                  }' $t3 >$t3.agency && mv $t3.agency $t3"
+              fi
+            fi
+          '';
+        };
+      };
+  }
 
   # Services: the command-line tools of the services apps ship to.
   {
