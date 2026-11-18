@@ -6,7 +6,7 @@
 </p>
 
 <p align="center">
-  give your agents the computer you already have
+  an os image to give your agents the computer you already have
 </p>
 
 <p align="center">
