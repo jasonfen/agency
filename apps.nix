@@ -11,11 +11,29 @@
 #                      nixpkgs lacks or builds badly. Choosing one turns on
 #                      Flatpak; the rebuild installs it (modules/apps.nix).
 #
+#   installScript = "url"
+#                      a command-line tool its maker ships only as an install
+#                      script that puts `command` in ~/.local/bin, where it
+#                      updates itself. agency-script-apps (modules/apps.nix)
+#                      runs the script as the agent when the command is
+#                      missing. With `t3Agent`, it also adds the tool to T3
+#                      Code as that ACP agent, running the same binary.
+#
 # An npm entry may also have `setup`, a command the agent account runs once
-# the package is installed, and `teardown`, run before it is removed. Any
-# entry may have `signin`, the command that signs it in to its service,
-# shown once it is installed (for tools that sign in from a terminal, not
-# from Settings).
+# the package is installed, and `teardown`, run before it is removed.
+#
+# An agent with its own sign-in has `account`, which puts it under Accounts
+# in the dashboard's Settings, with a Sign in button that runs `signin` in
+# the dashboard's terminal:
+#   account = {
+#     program = "claude";                     # installed if on PATH
+#     signin = "claude";                      # signs it in, in a terminal
+#     signedIn = ".claude/.credentials.json"; # exists once signed in (in ~)
+#     # or, when no file says so:
+#     check = "...";                          # exits 0 when signed in
+#   };
+# Any other entry may have `signin`, the command that signs it in to its
+# service, which the catalog shows once it is installed.
 #
 # Every entry has a `group` and a one-line `description` for the
 # dashboard's app catalog, and may have a logo: dashboard/ui/logos/<id>.svg.
@@ -30,6 +48,11 @@
     group = "Agents";
     description = "Anthropic's coding agent for the terminal.";
     npm = "@anthropic-ai/claude-code";
+    account = {
+      program = "claude";
+      signin = "claude";
+      signedIn = ".claude/.credentials.json";
+    };
   }
   {
     id = "codex";
@@ -37,6 +60,11 @@
     group = "Agents";
     description = "OpenAI's coding agent for the terminal.";
     npm = "@openai/codex";
+    account = {
+      program = "codex";
+      signin = "codex login";
+      signedIn = ".codex/auth.json";
+    };
   }
   {
     id = "opencode";
@@ -44,6 +72,11 @@
     group = "Agents";
     description = "An open-source coding agent that works with many model providers.";
     npm = "opencode-ai";
+    account = {
+      program = "opencode";
+      signin = "opencode auth login";
+      signedIn = ".local/share/opencode/auth.json";
+    };
   }
   {
     id = "t3code";
@@ -57,11 +90,20 @@
     teardown = "t3 service uninstall";
   }
   {
-    id = "gemini-cli";
-    label = "Gemini CLI";
+    id = "antigravity";
+    label = "Antigravity CLI";
     group = "Agents";
-    description = "Google's coding agent for the terminal. Signs in on first run: gemini.";
-    npm = "@google/gemini-cli";
+    description = "Google's coding agent for the terminal, agy, which replaced Gemini CLI.";
+    installScript = "https://antigravity.google/cli/install.sh";
+    command = "agy";
+    account = {
+      program = "agy";
+      # agy signs in on its first run; it has no login command.
+      signin = "agy";
+      # It keeps its sign-in in no file of its own; asking for the models
+      # fails at once, without the network, when it is signed out.
+      check = "agy models";
+    };
   }
   {
     id = "copilot-cli";
@@ -71,95 +113,20 @@
     npm = "@github/copilot";
   }
   {
-    id = "amp";
-    label = "Amp";
-    group = "Agents";
-    description = "Amp's coding agent for the terminal (ampcode.com).";
-    # @sourcegraph/amp is now a wrapper whose command Bun does not link.
-    npm = "@ampcode/cli";
-    signin = "amp login";
-  }
-  {
     id = "devin";
     label = "Devin CLI";
     group = "Agents";
     description = "Cognition's coding agent for the terminal. T3 Code runs it too, signed in as the same account.";
-    signin = "devin auth login --force-manual-token-flow";
-    system =
-      let
-        home = "/home/${settings.user}";
-      in
-      {
-        # Cognition ships Devin CLI only through its install script, into
-        # ~/.local/bin, where it updates itself; like the npm apps, it is
-        # installed into the agent account rather than by Nix. Its binary
-        # runs through nix-ld. This checks at boot, and after a rebuild,
-        # that it is there, and installs it if not. `agency apps remove
-        # devin` stops checking; ~/.local/bin/devin stays until deleted.
-        #
-        # It also adds Devin to T3 Code as an ACP provider (acp_devin) that
-        # runs this same binary, so T3 Code uses the account `devin auth
-        # login` signed in, rather than downloading a second copy. An
-        # acp_devin a person already set up is left as it is.
-        # Watch it with: journalctl -u agency-devin
-        systemd.services.agency-devin = {
-          description = "Install Devin CLI and add it to T3 Code";
-          wantedBy = [ "multi-user.target" ];
-          after = [
-            "network-online.target"
-            "agency-firstboot.service"
-            "agency-npm-apps.service"
-          ];
-          wants = [ "network-online.target" ];
-          path = with pkgs; [
-            bash
-            curl
-            coreutils
-            gnutar
-            gzip
-            unzip
-            gnugrep
-            gnused
-            findutils
-            which
-            jq
-            util-linux
-          ];
-          serviceConfig = {
-            Type = "exec";
-            RemainAfterExit = true;
-            Restart = "on-failure";
-            RestartSec = 60;
-          };
-          script = ''
-            as_user() {
-              runuser -u ${settings.user} -- env HOME=${home} \
-                PATH=${home}/.local/bin:$PATH ${pkgs.runtimeShell} -c "$1"
-            }
-
-            if [ ! -x ${home}/.local/bin/devin ]; then
-              until curl -fsS --max-time 10 -o /dev/null https://cli.devin.ai/install.sh; do
-                sleep 5
-              done
-              echo "Installing Devin CLI"
-              as_user "curl -fsSL https://cli.devin.ai/install.sh | bash"
-            fi
-
-            # T3 Code's settings, which it reloads when they change.
-            t3=${home}/.t3/userdata/settings.json
-            if [ -d ${home}/.t3 ] || ${if builtins.elem "t3code" settings.apps then "true" else "false"}; then
-              as_user "mkdir -p ${home}/.t3/userdata && { [ -s $t3 ] || echo '{}' >$t3; }"
-              if ! jq -e '.providerInstances.acp_devin' $t3 >/dev/null; then
-                echo "Adding Devin to T3 Code"
-                as_user "jq '.providerInstances.acp_devin = {
-                    driver: \"acpRegistry\",
-                    config: { agentId: \"devin\", commandPath: \"${home}/.local/bin/devin\" }
-                  }' $t3 >$t3.agency && mv $t3.agency $t3"
-              fi
-            fi
-          '';
-        };
-      };
+    installScript = "https://cli.devin.ai/install.sh";
+    command = "devin";
+    t3Agent = "devin";
+    account = {
+      program = "devin";
+      # Pastes a token, as a localhost redirect cannot reach a browser
+      # on another machine.
+      signin = "devin auth login --force-manual-token-flow";
+      signedIn = ".local/share/devin/credentials.toml";
+    };
   }
 
   # Services: the command-line tools of the services apps ship to.

@@ -27,8 +27,6 @@ async function startJob(path, body = {}) {
 
 // ---------------------------------------------------------------- shared
 
-const NAMES = { github: "GitHub", claude: "Claude Code", codex: "Codex", opencode: "OpenCode", t3: "T3 Code" };
-
 const gb = (bytes) => {
   const n = bytes / 1e9;
   return n >= 100 ? n.toFixed(0) : n.toFixed(1).replace(/\.0$/, "");

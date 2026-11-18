@@ -182,33 +182,53 @@ class Shots:
 
 shots = Shots()
 
-# Where each agent CLI keeps its sign-in.
-TOOLS = [
-    ("github", "GitHub", "gh", None),
-    ("claude", "Claude Code", "claude", ".claude/.credentials.json"),
-    ("codex", "Codex", "codex", ".codex/auth.json"),
-    ("opencode", "OpenCode", "opencode", ".local/share/opencode/auth.json"),
-    # T3 keeps no plain sign-in file; the dashboard notes a finished sign-in.
-    ("t3", "T3 Code", "t3", ".local/state/agency/t3-connected"),
-]
+# The agents with a sign-in of their own, from the catalog (apps.nix,
+# written out by modules/dashboard.nix): the program that says it is
+# installed, and the file that exists once it is signed in, or a command
+# that exits 0 when it is.
+def catalog_accounts():
+    try:
+        listed = json.loads(Path(os.environ["AGENCY_ACCOUNTS"]).read_text())
+    except (KeyError, OSError, ValueError):
+        return []
+    return [a for a in listed if isinstance(a, dict) and APP_ID.match(str(a.get("id", "")))]
+
+
+def agent_env():
+    """PATH with the agent CLIs on it, wherever they were installed."""
+    env = dict(os.environ)
+    env["PATH"] = os.pathsep.join([str(HOME / ".local/bin"), str(HOME / ".bun/bin"),
+                                   str(HOME / ".npm-global/bin"), env.get("PATH", "")])
+    return env
 
 
 @cached(30)
 def accounts():
+    """GitHub, then each installed agent from the catalog, then T3 Code."""
     found = []
-    for tool_id, label, program, auth_file in TOOLS:
-        entry = {"id": tool_id, "label": label, "installed": bool(which(program)), "signedIn": False, "detail": ""}
-        if tool_id == "github" and entry["installed"]:
-            ok, out, err = sh("gh", "auth", "status", "--hostname", "github.com", timeout=15)
-            entry["signedIn"] = ok
-            name = re.search(r"(?:account|as) (\S+)", out + err) if ok else None
-            entry["detail"] = f"Signed in as {name.group(1)}" if name else ("Signed in" if ok else "Not signed in")
-        elif entry["installed"]:
-            entry["signedIn"] = (HOME / auth_file).exists()
-            entry["detail"] = "Signed in" if entry["signedIn"] else "Not signed in"
-        else:
+    if which("gh"):
+        ok, out, err = sh("gh", "auth", "status", "--hostname", "github.com", timeout=15)
+        name = re.search(r"(?:account|as) (\S+)", out + err) if ok else None
+        found.append({"id": "github", "label": "GitHub", "installed": True, "signedIn": ok,
+                      "detail": f"Signed in as {name.group(1)}" if name else ("Signed in" if ok else "Not signed in")})
+    for a in catalog_accounts():
+        prog = which(a.get("program") or "")
+        if not prog:
             continue  # only tools that are installed; add others under Apps
-        found.append(entry)
+        if a.get("signedIn"):
+            signed = (HOME / a["signedIn"]).exists()
+        elif a.get("check"):
+            ok, _, _ = sh("sh", "-c", a["check"], timeout=15, env=agent_env())
+            signed = ok
+        else:
+            signed = False
+        found.append({"id": a["id"], "label": a.get("label") or a["id"], "installed": True,
+                      "signedIn": signed, "detail": "Signed in" if signed else "Not signed in"})
+    # T3 keeps no plain sign-in file; the dashboard notes a finished sign-in.
+    if which("t3"):
+        signed = (HOME / ".local/state/agency/t3-connected").exists()
+        found.append({"id": "t3", "label": "T3 Code", "installed": True, "signedIn": signed,
+                      "detail": "Signed in" if signed else "Not signed in"})
     return found
 
 
@@ -233,6 +253,7 @@ def apps():
             "description": app.get("description") or "",
             "kind": app.get("kind"),
             "signin": app.get("signin") or "",
+            "account": bool(app.get("hasAccount")),
             "on": bool(app.get("on")),
             "logo": (UI / "logos" / f"{app['id']}.svg").is_file(),
         })
@@ -968,8 +989,7 @@ class CliCodeLogin(CodeLogin):
         if not prog:
             self._set(run_id, state="failed", error="It is not installed.")
             return
-        env = dict(os.environ)
-        env["PATH"] = os.pathsep.join([str(HOME / ".bun/bin"), str(HOME / ".npm-global/bin"), env.get("PATH", "")])
+        env = agent_env()
         try:
             proc = subprocess.Popen([prog, *self.cmd[1:]], stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
                                     stderr=subprocess.STDOUT, text=True, errors="replace", env=env, cwd=HOME)

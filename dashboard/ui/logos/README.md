@@ -14,9 +14,10 @@ from client/images/ in silverbulletmd/silverbullet; svgl and Simple Icons
 don't have it.
 `rex.svg` wraps a PNG the same way: the Rex app icon (apple-touch-icon.png
 on superlogical.com/rex/docs). Superlogical has no SVG of it.
-`eas.svg` is svgl's Expo logo, `android-sdk.svg` its Android icon and
-`copilot-cli.svg` its GitHub Copilot logo. svgl's AMP logo is a different
-project, so `amp.svg` is Amp's own favicon, from ampcode.com.
+`eas.svg` is svgl's Expo logo, `android-sdk.svg` its Android icon,
+`copilot-cli.svg` its GitHub Copilot logo and `antigravity.svg` its
+Antigravity logo. Neither svgl nor Simple Icons has Devin, so `devin.svg`
+is Devin's own favicon, from devin.ai.
 
 The 3D printing apps aren't in svgl either. `bambu-studio.svg` (Bambu
 Lab's mark), `openscad.svg` and `freecad.svg` are from Simple Icons, filled

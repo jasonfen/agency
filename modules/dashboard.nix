@@ -21,7 +21,24 @@ let
   terminalPort = 7381;
   tailscale = config.services.tailscale.package;
 
-  # `agency-signin <tool>`: sign one known agent tool in. Only these.
+  # The agents with a sign-in of their own: the catalog entries with an
+  # `account` (apps.nix). The dashboard lists them under Accounts, and
+  # agency-signin runs their sign-in in its terminal.
+  catalog = import ../apps.nix { inherit pkgs settings; };
+  accountApps = builtins.filter (app: app ? account) catalog;
+  accounts = pkgs.writeText "agency-accounts.json" (
+    builtins.toJSON (
+      map (app: {
+        inherit (app) id label;
+        inherit (app.account) program;
+        signedIn = app.account.signedIn or null;
+        check = app.account.check or null;
+      }) accountApps
+    )
+  );
+
+  # `agency-signin <id>`: sign GitHub, or one agent from the catalog, in.
+  # Only these.
   signin = pkgs.writeShellScriptBin "agency-signin" ''
     need() {
       if ! command -v "$1" >/dev/null; then
@@ -32,17 +49,14 @@ let
     case "''${1:-}" in
       github)
         gh auth login --hostname github.com --git-protocol https --web && gh auth setup-git && agency-git-identity ;;
-      claude)
-        need claude "Claude Code" claude-code
-        claude ;;
-      codex)
-        need codex Codex codex
-        codex login ;;
-      opencode)
-        need opencode OpenCode opencode
-        opencode auth login ;;
+    ${lib.concatMapStrings (app: ''
+      ${app.id})
+        need ${lib.escapeShellArgs [ app.account.program app.label app.id ]}
+        echo "Signing in to ${app.label}."
+        ${app.account.signin} ;;
+    '') accountApps}
       *)
-        echo "usage: agency-signin github|claude|codex|opencode" >&2
+        echo "usage: agency-signin github|${lib.concatMapStringsSep "|" (app: app.id) accountApps}" >&2
         exit 2 ;;
     esac
   '';
@@ -138,6 +152,7 @@ in
     environment = {
       AGENCY_UI = "${../dashboard/ui}";
       AGENCY_FONTS = "${../installer/ui/fonts}";
+      AGENCY_ACCOUNTS = "${accounts}";
       AGENCY_USER = settings.user;
       # Where `bun add -g` and `npm install -g` put agent CLIs (see
       # modules/agents.nix).

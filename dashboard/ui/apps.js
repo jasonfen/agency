@@ -13,6 +13,7 @@ let lastFinished = null; // id of the last job we saw finish
 let group = "All";
 let query = "";
 let queue = new Map(); // app id -> "add" | "remove", as the server last said
+let accounts = []; // the server's sign-ins (Settings > Accounts), by app id
 
 const running = () => !!(job && job.state === "running");
 const byId = (id) => catalog?.apps.find((a) => a.id === id);
@@ -55,8 +56,33 @@ function cardAction(a) {
     : `<button type="button" class="button button--solid" data-app="${esc(a.id)}" data-on="0">Add</button>`;
 }
 
+// How an app gets on the machine, for the cards of apps that are off.
+const HOW = { npm: "Quick install", flatpak: "From Flathub", script: "Needs a rebuild", system: "Needs a rebuild" };
+
+// The left of an installed card's foot: an agent's sign-in, as on the
+// Settings page, or nothing.
+function cardStatus(a) {
+  if (!a.on || appState(a.id) || !a.account) return "";
+  const acct = accounts.find((x) => x.id === a.id);
+  if (!acct) return "";
+  return acct.signedIn
+    ? `<span class="on">Signed in</span>`
+    : `<a class="button button--solid" href="/?signin=${encodeURIComponent(a.id)}">Sign in</a>`;
+}
+
+// A service CLI that signs in from a terminal: its command, to copy.
+function cardSignin(a) {
+  if (!a.on || a.account || !a.signin) return "";
+  return `<div class="app-signin">
+    <span class="app-signin-label">Sign in</span>
+    <code class="app-signin-cmd">${esc(a.signin)}</code>
+    <button type="button" class="button app-copy" data-copy="${esc(a.signin)}" aria-label="Copy the sign-in command">Copy</button>
+  </div>`;
+}
+
 function card(a) {
   const st = appState(a.id);
+  const left = cardStatus(a) || (a.on ? "" : `<span class="tag">${HOW[a.kind] || HOW.system}</span>`);
   return `<article class="app ${a.on ? "is-on" : ""} ${st ? "is-busy" : ""}">
     <div class="app-head">
       ${appLogo(a)}
@@ -66,8 +92,9 @@ function card(a) {
       </div>
       ${a.on ? `<span class="on">Installed</span>` : ""}
     </div>
-    <p class="app-text">${esc(a.description)}${a.on && a.signin ? `<br>Sign in with <code>${esc(a.signin)}</code>` : ""}</p>
-    <div class="app-foot"><span class="tag">${a.kind === "npm" ? "Bun" : a.kind === "flatpak" ? "Flathub" : "System"}</span><span class="app-action">${cardAction(a)}</span></div>
+    <p class="app-text">${esc(a.description)}</p>
+    ${cardSignin(a)}
+    <div class="app-foot"><span class="app-status">${left}</span><span class="app-action">${cardAction(a)}</span></div>
   </article>`;
 }
 
@@ -147,6 +174,7 @@ async function refresh() {
       const lastId = job?.id;
       job = s.job;
       queue = new Map(Object.entries(s.queue || {}));
+      accounts = s.accounts || [];
       // A change finished: reload which apps are on. The server may have
       // started the queued one already, so a new job id counts too.
       if (job && !running() && job.id !== lastFinished) {
@@ -182,6 +210,16 @@ document.addEventListener("click", async (ev) => {
   if (t.dataset.undo) {
     return enqueue(t.dataset.undo, null);
   }
+  if (t.dataset.copy) {
+    try {
+      await navigator.clipboard.writeText(t.dataset.copy);
+      t.textContent = "Copied";
+    } catch {
+      t.textContent = "Select it";
+    }
+    setTimeout(() => { t.textContent = "Copy"; }, 1500);
+    return;
+  }
   switch (t.dataset.action) {
     case "job-dismiss":
       await api("/api/job/dismiss", {});
@@ -206,7 +244,10 @@ if (last && !last.error) {
   drawCatalog();
 }
 const lastState = recall("state");
-if (lastState) drawHeader({ ...lastState, state: null });
+if (lastState) {
+  accounts = lastState.accounts || [];
+  drawHeader({ ...lastState, state: null });
+}
 
 refresh();
 loadCatalog();

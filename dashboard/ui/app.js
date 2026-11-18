@@ -298,7 +298,8 @@ whenShown(() => new IntersectionObserver((entries, obs) => {
 // Sign-ins that run in the terminal come here from Settings: /?signin=<tool>.
 function signInHere(tool) {
   openTerminal(`/terminal/?arg=${encodeURIComponent(tool)}`);
-  $("#term-note").innerHTML = `Signing in to ${esc(NAMES[tool] || tool)}. Follow the steps in the terminal. <button type="button" class="button" data-action="term-shell">Back to the shell</button>`;
+  const name = (state || recall("state"))?.accounts?.find((a) => a.id === tool)?.label || tool;
+  $("#term-note").innerHTML = `Signing in to ${esc(name)}. Follow the steps in the terminal. <button type="button" class="button" data-action="term-shell">Back to the shell</button>`;
   $("#terminal").scrollIntoView();
 }
 

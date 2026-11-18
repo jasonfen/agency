@@ -11,6 +11,17 @@
 # `agency apps add`. It never removes anything: `agency apps remove` does.
 # Watch it with: journalctl -u agency-npm-apps
 #
+# Entries with `installScript` are installed the same way, by
+# agency-script-apps: at boot and after a rebuild it runs the maker's
+# install script, as the agent, for each chosen tool whose command is not
+# in ~/.local/bin. Installers like to add ~/.local/bin to PATH in the shell
+# files; it is on PATH already (modules/agents.nix), so the shell files are
+# put back as they were. Tools with `t3Agent` are added to T3 Code as that
+# ACP agent, running the installed binary, so one sign-in covers both; an
+# entry a person already set up in T3 is left as it is. It never removes
+# anything; a removed tool's binary stays until deleted.
+# Watch it with: journalctl -u agency-script-apps
+#
 # Entries of the `flatpak` kind turn on Flatpak (as the `flatpak` entry
 # does), and agency-flatpak-apps installs them from Flathub, system-wide.
 # The rebuild starts it, at boot it checks again, and `agency apps` waits
@@ -31,6 +42,7 @@ let
   catalog = import ../apps.nix { inherit pkgs settings; };
   chosen = builtins.filter (app: builtins.elem app.id settings.apps) catalog;
   npmApps = builtins.filter (app: app ? npm) chosen;
+  scriptApps = builtins.filter (app: app ? installScript) chosen;
   flatpakApps = builtins.filter (app: app ? flatpak) chosen;
   flatpakEntry = lib.findFirst (app: app.id == "flatpak") { } catalog;
 
@@ -56,6 +68,12 @@ let
   ensure = lib.concatMapStrings (app: ''
     ensure ${lib.escapeShellArg app.npm} ${lib.escapeShellArg (app.setup or "")}
   '') npmApps;
+
+  # One line per script app: its command, install script and T3 agent id.
+  ensureScripts = lib.concatMapStrings (app: ''
+    ensure ${lib.escapeShellArgs [ app.command app.installScript (app.t3Agent or "") ]}
+  '') scriptApps;
+  t3Chosen = builtins.elem "t3code" settings.apps;
 in
 {
   config = lib.mkMerge (
@@ -192,6 +210,88 @@ in
             }
 
             ${ensure}
+          '';
+        };
+      })
+
+      (lib.mkIf (scriptApps != [ ]) {
+        systemd.services.agency-script-apps = {
+          description = "Install the script-installed apps chosen in settings.nix";
+          wantedBy = [ "multi-user.target" ];
+          after = [
+            "network-online.target"
+            "agency-firstboot.service"
+            "agency-npm-apps.service"
+          ];
+          wants = [ "network-online.target" ];
+          path = with pkgs; [
+            bash
+            curl
+            wget
+            coreutils
+            gnutar
+            gzip
+            unzip
+            gnugrep
+            gnused
+            findutils
+            which
+            jq
+            glibc.bin # ldd, which installers use to tell glibc from musl
+            util-linux
+          ];
+          serviceConfig = {
+            Type = "exec";
+            RemainAfterExit = true;
+            Restart = "on-failure";
+            RestartSec = 60;
+          };
+          script = ''
+            as_user() {
+              runuser -u ${user} -- env HOME=${home} \
+                PATH=${home}/.local/bin:$PATH ${pkgs.runtimeShell} -c "$1"
+            }
+            shell_files=(.bashrc .profile .bash_profile .zshrc)
+
+            # ensure COMMAND SCRIPT T3AGENT
+            ensure() {
+              if [ ! -x ${home}/.local/bin/"$1" ]; then
+                until curl -fsS --max-time 10 -o /dev/null "$2"; do
+                  sleep 5
+                done
+                saved=$(mktemp -d)
+                for f in "''${shell_files[@]}"; do
+                  [ -e ${home}/$f ] && cp -p ${home}/$f "$saved/$f"
+                done
+                echo "Installing $1 from $2"
+                as_user "curl -fsSL '$2' | bash"
+                for f in "''${shell_files[@]}"; do
+                  if [ -e "$saved/$f" ]; then
+                    cmp -s "$saved/$f" ${home}/$f || cp -p "$saved/$f" ${home}/$f
+                  else
+                    rm -f ${home}/$f
+                  fi
+                done
+                rm -rf "$saved"
+              fi
+              [ -n "$3" ] && add_to_t3 "$3" ${home}/.local/bin/"$1"
+              return 0
+            }
+
+            # add_to_t3 AGENT BINARY: T3 Code's settings, which it reloads
+            # when they change. Only if T3 is chosen or has run.
+            t3=${home}/.t3/userdata/settings.json
+            add_to_t3() {
+              [ -d ${home}/.t3 ] || ${lib.boolToString t3Chosen} || return 0
+              as_user "mkdir -p ${home}/.t3/userdata && { [ -s $t3 ] || echo '{}' >$t3; }"
+              jq -e --arg k "acp_$1" '.providerInstances[$k]' $t3 >/dev/null && return 0
+              echo "Adding $1 to T3 Code"
+              as_user "jq --arg k 'acp_$1' --arg a '$1' --arg c '$2' \
+                '.providerInstances[\$k] = { driver: \"acpRegistry\", config: { agentId: \$a, commandPath: \$c } }' \
+                $t3 >$t3.agency && mv $t3.agency $t3"
+            }
+
+            ${ensureScripts}
           '';
         };
       })
