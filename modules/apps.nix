@@ -229,6 +229,7 @@ in
             curl
             wget
             coreutils
+            diffutils
             gnutar
             gzip
             unzip
