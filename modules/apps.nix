@@ -71,7 +71,7 @@ let
 
   # One line per script app: its command, install script and T3 agent id.
   ensureScripts = lib.concatMapStrings (app: ''
-    ensure ${lib.escapeShellArgs [ app.command app.installScript (app.t3Agent or "") ]}
+    ensure ${lib.escapeShellArgs [ app.command app.installScript (app.t3Agent or "") (app.t3Driver or "") ]}
   '') scriptApps;
   t3Chosen = builtins.elem "t3code" settings.apps;
 in
@@ -254,7 +254,7 @@ in
             }
             shell_files=(.bashrc .profile .bash_profile .zshrc)
 
-            # ensure COMMAND SCRIPT T3AGENT
+            # ensure COMMAND SCRIPT T3AGENT T3DRIVER
             ensure() {
               if [ ! -x ${home}/.local/bin/"$1" ]; then
                 until curl -fsS --max-time 10 -o /dev/null "$2"; do
@@ -276,6 +276,7 @@ in
                 rm -rf "$saved"
               fi
               [ -n "$3" ] && add_to_t3 "$3" ${home}/.local/bin/"$1"
+              [ -n "$4" ] && add_t3_driver "$4" ${home}/.local/bin/"$1"
               return 0
             }
 
@@ -285,10 +286,29 @@ in
             add_to_t3() {
               [ -d ${home}/.t3 ] || ${lib.boolToString t3Chosen} || return 0
               as_user "mkdir -p ${home}/.t3/userdata && { [ -s $t3 ] || echo '{}' >$t3; }"
+              # T3 names an agent it added from the registry acpRegistry_AGENT;
+              # one added here is acp_AGENT. Either counts as set up.
               jq -e --arg k "acp_$1" '.providerInstances[$k]' $t3 >/dev/null && return 0
+              jq -e --arg k "acpRegistry_$1" '.providerInstances[$k]' $t3 >/dev/null && return 0
               echo "Adding $1 to T3 Code"
               as_user "jq --arg k 'acp_$1' --arg a '$1' --arg c '$2' \
                 '.providerInstances[\$k] = { driver: \"acpRegistry\", config: { agentId: \$a, commandPath: \$c } }' \
+                $t3 >$t3.agency && mv $t3.agency $t3"
+            }
+
+            # add_t3_driver DRIVER BINARY: T3 Code's native provider DRIVER,
+            # running BINARY, for a driver whose binary serves ACP itself.
+            # Fills in the binary path when the provider has none; a path a
+            # person chose is left as it is. Only if T3 is chosen or has run.
+            add_t3_driver() {
+              [ -d ${home}/.t3 ] || ${lib.boolToString t3Chosen} || return 0
+              as_user "mkdir -p ${home}/.t3/userdata && { [ -s $t3 ] || echo '{}' >$t3; }"
+              jq -e --arg d "$1" '.providerInstances[$d].config.binaryPath' $t3 >/dev/null && return 0
+              echo "Adding $1 to T3 Code"
+              as_user "jq --arg d '$1' --arg b '$2' \
+                '.providerInstances[\$d] //= { driver: \$d, enabled: true, config: { binaryPath: \$b } } \
+                | .providerInstances[\$d].config //= {} \
+                | .providerInstances[\$d].config.binaryPath = \$b' \
                 $t3 >$t3.agency && mv $t3.agency $t3"
             }
 

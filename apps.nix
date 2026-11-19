@@ -17,7 +17,10 @@
 #                      updates itself. agency-script-apps (modules/apps.nix)
 #                      runs the script as the agent when the command is
 #                      missing. With `t3Agent`, it also adds the tool to T3
-#                      Code as that ACP agent, running the same binary.
+#                      Code as that ACP agent, running the same binary. With
+#                      `t3Driver`, it adds it as that native T3 Code provider
+#                      instead, for a driver whose binary serves ACP itself
+#                      (agy), pointing the provider at the binary.
 #
 # An npm entry may also have `setup`, a command the agent account runs once
 # the package is installed, and `teardown`, run before it is removed.
@@ -96,6 +99,10 @@
     description = "Google's coding agent for the terminal, agy, which replaced Gemini CLI.";
     installScript = "https://antigravity.google/cli/install.sh";
     command = "agy";
+    # T3 Code's Antigravity provider, running the CLI installed here. The
+    # CLI serves ACP itself, but T3 looks for Google's separate ACP server
+    # unless told the path, and reports the provider as not installed.
+    t3Driver = "antigravity";
     account = {
       program = "agy";
       # agy signs in on its first run; it has no login command.
