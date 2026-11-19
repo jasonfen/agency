@@ -216,6 +216,7 @@ in
             }
 
             ${ensure}
+            [ -x /run/current-system/sw/bin/agency-sync-skills ] && as_user "/run/current-system/sw/bin/agency-sync-skills" || true
           '';
         };
       })
@@ -319,6 +320,7 @@ in
             }
 
             ${ensureScripts}
+            [ -x /run/current-system/sw/bin/agency-sync-skills ] && as_user "/run/current-system/sw/bin/agency-sync-skills" || true
           '';
         };
       })

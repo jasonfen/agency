@@ -156,6 +156,7 @@ in
           ${setups}
           esac
         done <${notes}/npm-packages
+        [ -x /run/current-system/sw/bin/agency-sync-skills ] && as_user "/run/current-system/sw/bin/agency-sync-skills" || true
       fi
       rm -f ${notes}/npm-packages
 

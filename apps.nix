@@ -39,6 +39,12 @@
 # Any other entry may have `signin`, the command that signs it in to its
 # service, which the catalog shows once it is installed.
 #
+# An agent CLI may also declare `skills` (its global skills folder, in ~) and
+# `instructions` (its global instructions file, in ~). modules/skills.nix
+# keeps all skills in ~/.agents/skills and symlinks them, along with the
+# machine instructions, into every installed agent (chosen in settings.apps,
+# or whose `account.program` / `command` is on PATH).
+#
 # Every entry has a `group` and a one-line `description` for the
 # dashboard's app catalog, and may have a logo: dashboard/ui/logos/<id>.svg.
 #
@@ -52,6 +58,8 @@
     group = "Agents";
     description = "Anthropic's coding agent for the terminal.";
     npm = "@anthropic-ai/claude-code";
+    skills = ".claude/skills";
+    instructions = ".claude/CLAUDE.md";
     account = {
       program = "claude";
       signin = "claude";
@@ -64,6 +72,8 @@
     group = "Agents";
     description = "OpenAI's coding agent for the terminal.";
     npm = "@openai/codex";
+    skills = ".codex/skills";
+    instructions = ".codex/AGENTS.md";
     account = {
       program = "codex";
       signin = "codex login";
@@ -77,6 +87,8 @@
     description = "An open-source coding agent that works with many model providers.";
     npm = "@opencode/cli";
     replaces = "opencode-ai";
+    skills = ".config/opencode/skills";
+    instructions = ".config/opencode/AGENTS.md";
     account = {
       program = "opencode";
       signin = "opencode auth login";
@@ -104,6 +116,8 @@
     description = "Google's coding agent for the terminal, agy, which replaced Gemini CLI.";
     installScript = "https://antigravity.google/cli/install.sh";
     command = "agy";
+    skills = ".gemini/config/skills";
+    instructions = ".gemini/GEMINI.md";
     # T3 Code's Antigravity provider, running the CLI installed here. The
     # CLI serves ACP itself, but T3 looks for Google's separate ACP server
     # unless told the path, and reports the provider as not installed.
@@ -123,6 +137,9 @@
     group = "Agents";
     description = "GitHub's coding agent for the terminal, with a Copilot plan. Signs in with /login inside copilot.";
     npm = "@github/copilot";
+    command = "copilot";
+    skills = ".copilot/skills";
+    instructions = ".copilot/copilot-instructions.md";
   }
   {
     id = "devin";
@@ -131,6 +148,8 @@
     description = "Cognition's coding agent for the terminal. T3 Code runs it too, signed in as the same account.";
     installScript = "https://cli.devin.ai/install.sh";
     command = "devin";
+    skills = ".config/devin/skills";
+    instructions = ".config/devin/AGENTS.md";
     t3Agent = "devin";
     account = {
       program = "devin";
