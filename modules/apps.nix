@@ -64,9 +64,10 @@ let
   user = settings.user;
   home = config.users.users.${user}.home;
 
-  # One line per app: the package, then the setup command (may be empty).
+  # One line per app: the package, the setup command, and any older npm
+  # package it replaced (removed first so its bin symlink does not linger).
   ensure = lib.concatMapStrings (app: ''
-    ensure ${lib.escapeShellArg app.npm} ${lib.escapeShellArg (app.setup or "")}
+    ensure ${lib.escapeShellArgs [ app.npm (app.setup or "") (app.replaces or "") ]}
   '') npmApps;
 
   # One line per script app: its command, install script and T3 agent id.
@@ -190,7 +191,8 @@ in
                 ${pkgs.runtimeShell} -c "$1"
             }
 
-            # ensure PACKAGE SETUP: install PACKAGE if missing, then run SETUP.
+            # ensure PACKAGE SETUP REPLACES: install PACKAGE if missing,
+            # removing REPLACES first if present, then run SETUP.
             online=
             ensure() {
               [ -e ${home}/.bun/install/global/node_modules/"$1" ] && return 0
@@ -201,6 +203,10 @@ in
                 done
                 systemctl start user@$uid.service || true
                 online=1
+              fi
+              if [ -n "$3" ]; then
+                [ -e ${home}/.bun/install/global/node_modules/"$3" ] && as_user "bun remove -g '$3'" || true
+                [ -e ${home}/.npm-global/lib/node_modules/"$3" ] && as_user "npm uninstall -g '$3'" || true
               fi
               echo "Installing $1"
               as_user "bun add -g --trust '$1'"

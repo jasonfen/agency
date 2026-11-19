@@ -23,7 +23,8 @@
 #                      (agy), pointing the provider at the binary.
 #
 # An npm entry may also have `setup`, a command the agent account runs once
-# the package is installed, and `teardown`, run before it is removed.
+# the package is installed, `teardown`, run before it is removed, and
+# `replaces`, an older npm package name to uninstall first when migrating.
 #
 # An agent with its own sign-in has `account`, which puts it under Accounts
 # in the dashboard's Settings, with a Sign in button that runs `signin` in
@@ -74,11 +75,15 @@
     label = "OpenCode";
     group = "Agents";
     description = "An open-source coding agent that works with many model providers.";
-    npm = "opencode-ai";
+    npm = "@opencode/cli";
+    replaces = "opencode-ai";
     account = {
       program = "opencode";
       signin = "opencode auth login";
-      signedIn = ".local/share/opencode/auth.json";
+      # OpenCode 2 stores credentials in opencode.db rather than auth.json.
+      # `auth list --standalone` avoids starting the background service and
+      # prints "No authenticated integrations" when signed out.
+      check = ''out=$(opencode auth list --standalone 2>/dev/null) && [ -n "$out" ] && case "$out" in *"No authenticated"*) false ;; esac'';
     };
   }
   {

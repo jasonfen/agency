@@ -388,11 +388,8 @@ def signed_in_as(tool):
         ok, _ = as_signin_user("codex", "login", "status")
         return "" if ok else None
     if tool == "opencode":
-        try:
-            auth = json.loads((SIGNIN_HOME / ".local/share/opencode/auth.json").read_text())
-        except (OSError, ValueError):
-            return None
-        return "" if auth else None
+        ok, out = as_signin_user("opencode", "auth", "list", "--standalone")
+        return "" if ok and out.strip() and "No authenticated" not in out else None
     return None
 
 

@@ -89,6 +89,7 @@
           else
             "system";
         npm = app.npm or null;
+        replaces = app.replaces or null;
         flatpak = app.flatpak or null;
         setup = app.setup or null;
         teardown = app.teardown or null;

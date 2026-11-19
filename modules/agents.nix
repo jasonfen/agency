@@ -60,6 +60,14 @@ in
   environment.extraInit = ''
     export PATH="$HOME/.bun/bin:$HOME/.npm-global/bin:$HOME/.local/bin:$PATH"
   '';
+  # User services (such as T3 Code) do not source /etc/profile; environment.d
+  # gives them the same PATH and package-manager locations as login shells.
+  # Sorts after NixOS's 50-systemd-path.conf so it prepends to that PATH.
+  environment.etc."environment.d/60-agency.conf".text = ''
+    BUN_INSTALL="$HOME/.bun"
+    NPM_CONFIG_PREFIX="$HOME/.npm-global"
+    PATH="$HOME/.bun/bin:$HOME/.npm-global/bin:$HOME/.local/bin:$PATH"
+  '';
 
   # A default identity, so `git commit` never stops to ask. Signing in to
   # GitHub replaces it with that account (agency-git-identity).

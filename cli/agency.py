@@ -587,14 +587,21 @@ def npm_apps(by_id, adds, removes):
             say(f"Removing {app['label']} ...")
             if app.get("teardown"):
                 run(["sh", "-c", app["teardown"]], env=env, check=False)
-            if (bun_home / "install/global/node_modules" / app["npm"]).exists():
-                run(["bun", "remove", "-g", app["npm"]], env=env, check=False)
-            if (prefix / "lib/node_modules" / app["npm"]).exists():
-                run(["npm", "uninstall", "-g", app["npm"]], env=env, check=False)
+            for pkg in filter(None, [app["npm"], app.get("replaces")]):
+                if (bun_home / "install/global/node_modules" / pkg).exists():
+                    run(["bun", "remove", "-g", pkg], env=env, check=False)
+                if (prefix / "lib/node_modules" / pkg).exists():
+                    run(["npm", "uninstall", "-g", pkg], env=env, check=False)
     for app_id in adds:
         app = by_id[app_id]
         if app["kind"] == "npm":
             say(f"Installing {app['label']} ...")
+            old = app.get("replaces")
+            if old:
+                if (bun_home / "install/global/node_modules" / old).exists():
+                    run(["bun", "remove", "-g", old], env=env, check=False)
+                if (prefix / "lib/node_modules" / old).exists():
+                    run(["npm", "uninstall", "-g", old], env=env, check=False)
             ok = run(["bun", "add", "-g", "--trust", app["npm"]], env=env, check=False).returncode == 0
             if ok and app.get("setup"):
                 ok = run(["sh", "-c", app["setup"]], env=env, check=False).returncode == 0
