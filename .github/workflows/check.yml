@@ -32,7 +32,8 @@ jobs:
       - name: Lint the installer
         run: |
           shellcheck -s bash installer/agency-install.sh
-          python3 -m py_compile installer/server.py cli/agency.py
+          python3 -m py_compile installer/server.py cli/agency.py cli/sync_skills.py
+          python3 -m unittest discover -s tests
           node --check installer/ui/app.js
 
       # The hosted runner is short on disk for a whole system.

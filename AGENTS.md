@@ -36,6 +36,8 @@ Never commit secrets. Use `agency secret set NAME`; it appears as `$NAME`. Don't
 
 ## Defaults
 
+Skills live in `~/.agents/skills` and are automatically symlinked into every installed agent CLI (adding a skill to any agent's skills folder moves it into `~/.agents/skills` and links it to the rest).
+
 Claude Code starts with Remote Control on. To turn it off, set `remoteControlAtStartup` to `false` in `~/.claude/settings.json`.
 
 ## To do

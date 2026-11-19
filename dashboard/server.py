@@ -48,7 +48,7 @@ REPO = Path(os.environ.get("AGENCY_REPO", "/etc/nixos"))
 # Parts of the repo the running system never uses: the download page, docs,
 # READMEs and CI. A commit that touches only these is not an update.
 # Keep in step with NOT_SYSTEM in cli/agency.py.
-NOT_SYSTEM = ("site", "docs", ".github", "**/README.md")
+NOT_SYSTEM = ("site", "docs", "tests", ".github", "**/README.md")
 URL_FILE = Path(os.environ.get("AGENCY_URL_FILE", "/run/agency/dashboard-url"))
 PROFILE = Path(os.environ.get("AGENCY_PROFILE", "/nix/var/nix/profiles/system"))
 RECOVERY_KEY = "/root/luks-recovery-key.txt"

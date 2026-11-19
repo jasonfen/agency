@@ -28,7 +28,7 @@ DEFAULT_REPO = "https://github.com/makors/agency"
 # Parts of the repo the running system never uses: the download page, docs,
 # READMEs and CI. Changes to only these need no rebuild, and the dashboard
 # does not offer them as updates. Keep in step with dashboard/server.py.
-NOT_SYSTEM = ("site", "docs", ".github", "**/README.md")
+NOT_SYSTEM = ("site", "docs", "tests", ".github", "**/README.md")
 
 # Written by the installer: the commit of this repo the machine came from.
 SOURCE_REV = Path("/var/lib/agency/source-rev")
@@ -682,6 +682,8 @@ def cmd_apps(args):
         write_setting("apps", nix_list(chosen))
 
     done = [a for a in adds if a not in failed]
+    if done and shutil.which("agency-sync-skills"):
+        run(["agency-sync-skills"], check=False)
     # npm apps said this as they installed (npm_apps); the rest say it here.
     for app_id in done:
         app = by_id[app_id]
@@ -1287,6 +1289,9 @@ def cmd_import(args):
             say("Restoring the home folder (files with the same name are replaced) ...")
             unpack(src, passphrase, Path.home(), ["home"], strip=1)
             say("Restored. Open a new shell to pick it up.")
+
+    if shutil.which("agency-sync-skills"):
+        run(["agency-sync-skills"], check=False)
 
     say(f"Done. This machine is set up like {manifest.get('from', 'the other one')}, and keeps its own name ({host()}).")
     say("  Sign-ins that are not in the home folder (and Tailscale) are this machine's own.")
