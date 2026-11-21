@@ -98,8 +98,10 @@ in
 
   systemd.paths.agency-skills-sync = {
     description = "Watch agent skill folders and CLI bins for changes";
+    # No After=agency-skills.service: a path unit is ordered before
+    # paths.target (and so basic.target), which agency-skills.service comes
+    # after, so that would be a cycle. sync_skills.py takes a lock instead.
     wantedBy = [ "multi-user.target" ];
-    after = [ "agency-skills.service" ];
     pathConfig = {
       Unit = "agency-skills-sync.service";
       PathChanged = watchPaths;
