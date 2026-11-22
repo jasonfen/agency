@@ -24,6 +24,8 @@ REPO = Path("/etc/nixos")
 SETTINGS = REPO / "settings.nix"
 FLAKE = f"path:{REPO}#agency"
 USER = os.environ.get("AGENCY_USER", "agent")
+# minFreeGB in settings.nix (modules/disk.nix): below it, `agency` warns.
+MIN_FREE_GB = int(os.environ.get("AGENCY_MIN_FREE_GB") or 20)
 DEFAULT_REPO = "https://github.com/makors/agency"
 # Parts of the repo the running system never uses: the download page, docs,
 # READMEs and CI. Changes to only these need no rebuild, and the dashboard
@@ -298,6 +300,11 @@ def rebuild(mode="switch"):
         die("the rebuild failed. The running system did not change.")
     if mode == "switch":
         say("Done. The new system is running and is the newest boot menu entry.")
+        # Activation deleted the generations past keepGenerations
+        # (modules/disk.nix); free their packages now, in the background.
+        if run(["sudo", "systemctl", "start", "--no-block", "nix-gc.service"],
+               check=False, capture=True).returncode == 0:
+            say("Freeing the packages of old systems in the background (nix-gc.service).")
 
 
 def battery_status():
@@ -377,6 +384,11 @@ def cmd_status(args):
     say(f"  updates    weekly nixpkgs ({channel()}) update; last: {last}")
     if uncommitted():
         notes.append("/etc/nixos has changes that are not committed.")
+    free_gb = shutil.disk_usage("/").free // 2**30
+    if free_gb < MIN_FREE_GB:
+        notes.append(f"Only {free_gb} GB of disk is free (minFreeGB is {MIN_FREE_GB}). "
+                     "The machine clears what it can every hour; see journalctl -u agency-disk-cleanup, "
+                     "and look for what else is large: sudo du -xh -d2 / | sort -h | tail")
     if backups_on():
         if output(["systemctl", "is-failed", BACKUP_UNIT]) == "failed":
             notes.append("The last backup failed: journalctl -u restic-backups-home")

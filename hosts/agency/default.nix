@@ -33,6 +33,7 @@ in
       ../../modules/autoupdate.nix # weekly nixpkgs updates
       ../../modules/secrets.nix # encrypted secrets for agents
       ../../modules/backup.nix # hourly backups of the home folder
+      ../../modules/disk.nix # old systems, logs and caches cleared before the disk fills
       ../../modules/skills.nix # what agent CLIs are told about this machine
       ../../modules/dashboard.nix # the web dashboard and terminal, over Tailscale
       ../../modules/screen.nix # the status screen on the laptop's own display
@@ -64,11 +65,6 @@ in
       settings.user
     ];
     auto-optimise-store = true;
-  };
-  nix.gc = {
-    automatic = true;
-    dates = "weekly";
-    options = "--delete-older-than 14d";
   };
   nixpkgs.config.allowUnfree = true;
 

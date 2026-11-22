@@ -47,13 +47,23 @@ let
   ];
   present = builtins.filter (n: config.sops.secrets ? ${n}) envNames;
 
-  # How long snapshots are kept.
-  keep = [
-    "--keep-hourly 24"
-    "--keep-daily 7"
-    "--keep-weekly 4"
-    "--keep-monthly 6"
-  ];
+  # How long snapshots are kept (backupKeep in settings.nix). The newest is
+  # always kept.
+  keepSet = {
+    hourly = 24;
+    daily = 7;
+    weekly = 4;
+    monthly = 0;
+  } // (settings.backupKeep or { });
+  keep = [ "--keep-last 1" ] ++ lib.concatMap (
+    k: lib.optional (keepSet.${k} > 0) "--keep-${k} ${toString keepSet.${k}}"
+  ) [ "hourly" "daily" "weekly" "monthly" ];
+
+  # Largest size of a repository on this disk, in bytes (backupMaxGB), or
+  # null. One elsewhere is not limited: it does not fill this disk, and
+  # other machines may share it.
+  maxGB = settings.backupMaxGB or 50;
+  maxBytes = if maxGB == null || repo != "" then null else maxGB * 1024 * 1024 * 1024;
 in
 lib.mkIf enabled {
   services.restic.backups.home = {
@@ -122,17 +132,37 @@ lib.mkIf enabled {
     IOSchedulingClass = "idle";
   };
 
-  # Drop old snapshots once a day.
+  # Drop old snapshots once a day, then, while a repository on this disk is
+  # over backupMaxGB, the oldest quarter of what is left, never the newest.
+  # Space is mostly held by old snapshots of files deleted since.
   systemd.services.agency-backup-prune = {
     description = "Drop old home folder backups";
     wants = [ "network-online.target" ];
     after = [ "network-online.target" ];
+    path = [ pkgs.jq pkgs.coreutils ];
     serviceConfig = {
       Type = "oneshot";
       Nice = 10;
       IOSchedulingClass = "idle";
-      ExecStart = "/run/current-system/sw/bin/restic-home --retry-lock 2h forget --prune ${lib.concatStringsSep " " keep}";
     };
+    script = ''
+      set -euo pipefail
+      r() { /run/current-system/sw/bin/restic-home --retry-lock 2h "$@"; }
+      r forget --prune ${lib.concatStringsSep " " keep}
+    '' + lib.optionalString (maxBytes != null) ''
+      for _ in 1 2 3 4 5 6 7 8; do
+        bytes=$(du -sb ${local} | cut -f1)
+        [ "$bytes" -gt ${toString maxBytes} ] || exit 0
+        ids=$(r snapshots --json | jq -r 'sort_by(.time) | .[:-1] | .[:((length + 3) / 4 | floor)] | .[].id')
+        if [ -z "$ids" ]; then
+          echo "The newest backup alone is over backupMaxGB (${toString maxGB} GB); keeping it."
+          exit 0
+        fi
+        echo "Backups take $((bytes / 1073741824)) GB, over backupMaxGB (${toString maxGB} GB): dropping the oldest $(echo "$ids" | wc -l)."
+        # shellcheck disable=SC2086
+        r forget --prune $ids
+      done
+    '';
   };
   systemd.timers.agency-backup-prune = {
     wantedBy = [ "timers.target" ];

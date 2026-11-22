@@ -49,6 +49,26 @@
   # `agency secret set`. null: no backups. See modules/backup.nix.
   backupRepo = "";
 
+  # --- Disk space ------------------------------------------------------------
+  # How many past systems are kept, for `agency rollback` and the boot menu.
+  # Older ones are deleted at every rebuild, so their packages can be freed.
+  # At least 2: the running one and one to go back to. See modules/disk.nix.
+  keepGenerations = 5;
+
+  # Which backups are kept: the newest of each hour for a day, of each day
+  # for a week, and of each week for a month.
+  backupKeep = { hourly = 24; daily = 7; weekly = 4; monthly = 0; };
+
+  # Largest size of the backups when they are on this disk (backupRepo = ""),
+  # in GB. Above it, the daily prune drops the oldest backups until they fit;
+  # the newest one always stays. null: no limit.
+  backupMaxGB = 50;
+
+  # Free space, in GB, below which the machine clears what it can at once
+  # (unused packages, Docker build cache, old logs and backups) and `agency`
+  # warns. Builds also free packages when they get this low.
+  minFreeGB = 20;
+
   # Tailscale logins, besides this machine's owner, that may use the web dashboard.
   dashboardUsers = [ ];
 

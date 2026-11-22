@@ -7,10 +7,10 @@
 
   nixpkgs.hostPlatform = "x86_64-linux";
 
-  # Boot: systemd-boot, with every past system kept as a boot menu entry.
-  # If a change breaks the machine, pick an older entry at boot.
+  # Boot: systemd-boot, with the last few systems as boot menu entries
+  # (keepGenerations in settings.nix). If a change breaks the machine, pick
+  # an older entry at boot.
   boot.loader.systemd-boot.enable = true;
-  boot.loader.systemd-boot.configurationLimit = 20;
   boot.loader.efi.canTouchEfiVariables = true;
   # The systemd initrd is needed for TPM disk unlock. From NixOS 26.11 it is
   # the only initrd, and setting the option is an error. (The option is still
