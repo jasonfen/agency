@@ -18,6 +18,7 @@ let
         makeWrapper ${pkgs.python3}/bin/python3 $out/bin/agency \
           --add-flags ${../cli/agency.py} \
           --set AGENCY_USER ${lib.escapeShellArg settings.user} \
+          --set AGENCY_MIN_FREE_GB ${toString (settings.minFreeGB or 20)} \
           --prefix PATH : ${
             lib.makeBinPath [
               pkgs.git

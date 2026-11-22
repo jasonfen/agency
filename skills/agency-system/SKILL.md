@@ -11,7 +11,8 @@ next reboot), and commit what works. Edits made outside the repo are lost or
 drift from it. Each module in `/etc/nixos/modules` says what it does at the top.
 
 Every rebuild is a boot menu entry, and `agency rollback` returns to the
-previous one. Changes to boot, disks, network or SSH can lock everyone out,
+previous one. Only the last few are kept (`keepGenerations` in settings.nix;
+modules/disk.nix clears older ones and keeps the disk from filling). Changes to boot, disks, network or SSH can lock everyone out,
 so be careful with those.
 
 Much needs no rebuild at all: `bun add -g` (or `npm install -g`), `uv`, `pip --user`,
