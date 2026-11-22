@@ -35,7 +35,7 @@ SOURCE_REV = Path("/var/lib/agency/source-rev")
 FIRSTBOOT = Path("/var/lib/agency/firstboot")
 RECOVERY_KEY = Path("/root/luks-recovery-key.txt")
 # The page the laptop's own display shows instead of the status screen
-# (`agency screen show URL`); the dashboard's /screen reads it.
+# (`agency screen show URL`); the kiosk (modules/screen.nix) opens it at start.
 SCREEN_URL = Path("/var/lib/agency/screen-url")
 
 # Backups (modules/backup.nix).
@@ -707,10 +707,14 @@ def cmd_screen(args):
         if not re.match(r"^https?://\S+$", url):
             die("usage: agency screen show http://...   (an http or https address)")
         run(["sudo", "tee", SCREEN_URL], stdin=url + "\n", capture=True)
-        say(f"The screen shows {url} within ten seconds. `agency screen reset` brings the status screen back.")
+        # Restarting the kiosk also reloads a page that failed to load, so
+        # running `show` again with the same address retries it.
+        run(["sudo", "systemctl", "restart", "cage-tty1.service"])
+        say(f"The screen shows {url}. `agency screen reset` brings the status screen back.")
     elif args.action == "reset":
         run(["sudo", "rm", "-f", SCREEN_URL])
-        say("The screen shows the status screen again within ten seconds.")
+        run(["sudo", "systemctl", "restart", "cage-tty1.service"])
+        say("The screen shows the status screen again.")
     else:
         url = root_read(SCREEN_URL).strip()
         say(f"The screen shows {url}" if url else "The screen shows the status screen.")

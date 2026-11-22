@@ -6,9 +6,7 @@ header to every request; the dashboard only answers logins that own this
 machine or are listed in `dashboardUsers` in settings.nix.
 
 /screen, its files and /api/screen need no login. They are what the laptop's
-own display shows (modules/screen.nix) and hold nothing secret. When
-`agency screen show URL` has picked another page, /screen shows that page
-fullscreen instead, until `agency screen reset`.
+own display shows (modules/screen.nix) and hold nothing secret.
 
 /settings moves a machine's setup to another one: `agency export` makes an
 encrypted file to download, and an uploaded one goes to `agency import`.
@@ -54,7 +52,6 @@ NOT_SYSTEM = ("site", "docs", ".github", "**/README.md")
 URL_FILE = Path(os.environ.get("AGENCY_URL_FILE", "/run/agency/dashboard-url"))
 PROFILE = Path(os.environ.get("AGENCY_PROFILE", "/nix/var/nix/profiles/system"))
 RECOVERY_KEY = "/root/luks-recovery-key.txt"
-SCREEN_URL = Path(os.environ.get("AGENCY_SCREEN_URL", "/var/lib/agency/screen-url"))
 HOME = Path.home()
 
 LOGIN_HEADER = "Tailscale-User-Login"
@@ -794,15 +791,6 @@ def console_password():
     return ok and len(out.split()) > 1 and out.split()[1] == "P"
 
 
-def screen_page():
-    """The page `agency screen show` picked for the display, or ""."""
-    try:
-        url = SCREEN_URL.read_text().strip()
-    except OSError:
-        return ""
-    return url if re.match(r"^https?://\S+$", url) else ""
-
-
 def screen():
     name = tailnet_name()
     try:
@@ -828,7 +816,6 @@ def screen():
         "url": url if name else "",
         "qr": qr_cached(url) if name and url else "",
         "console": console_password(),
-        "show": screen_page(),
     }
 
 
